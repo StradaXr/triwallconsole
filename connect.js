@@ -199,5 +199,47 @@ function authLogout(bin) {
   return { ok: r.ok, detail: r.ok ? 'Signed out on this machine.' : (r.err || r.out || 'Logout failed.') };
 }
 
-module.exports = { resolveHiggsfield, installHiggsfield, authLogout, npmGlobalPrefix, candidatePaths,
+// SWITCHING ACCOUNTS NEEDS A PRIVATE WINDOW.
+//
+// `auth logout` only deletes the CLI's local token. The sign-in itself runs in
+// the browser, which is still signed in to higgsfield.ai - and its sign-in page
+// runs Google One Tap, which signs straight back in as the Google account the
+// browser holds. So signing out and in again kept landing on the same wrong
+// account however many times it was done. A private window has none of those
+// sessions, so the account has to be chosen by hand.
+//
+// The CLI still opens its own normal tab (it has no switch to stop that), but
+// Higgsfield's consent step waits for a click on Allow, so that tab does
+// nothing unless someone approves it there.
+function privateBrowser() {
+  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA].filter(Boolean);
+  const find = (...rel) => roots.map(r => path.join(r, ...rel)).find(f => fs.existsSync(f));
+  const all = {
+    chrome:  { exe: find('Google', 'Chrome', 'Application', 'chrome.exe'), flag: '--incognito', name: 'Chrome incognito' },
+    edge:    { exe: find('Microsoft', 'Edge', 'Application', 'msedge.exe'), flag: '--inprivate', name: 'Edge InPrivate' },
+    firefox: { exe: find('Mozilla Firefox', 'firefox.exe'), flag: '-private-window', name: 'Firefox private window' },
+  };
+  // The operator's default browser first, so the window opens where they work.
+  const r = runSync('reg', ['query',
+    'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice', '/v', 'ProgId'], 5000);
+  const prog = r.ok ? r.out : '';
+  const first = /Chrome/i.test(prog) ? 'chrome' : /MSEdge|Edge/i.test(prog) ? 'edge' : /Firefox/i.test(prog) ? 'firefox' : null;
+  const order = [first, 'chrome', 'edge', 'firefox'].filter(Boolean);
+  for (const k of order) if (all[k].exe) return all[k];
+  return null;
+}
+
+// `opts.delayMs` opens it that much later, so it lands on top of whatever
+// the CLI opens at the same moment.
+function openPrivateWindow(url, opts) {
+  if (process.platform !== 'win32') return { ok: false, error: 'Private-window launch is Windows-only here.' };
+  const b = privateBrowser();
+  if (!b) return { ok: false, error: 'No Chrome, Edge or Firefox found.' };
+  const launch = () => { try { spawn(b.exe, [b.flag, url], { detached: true, stdio: 'ignore' }).unref(); } catch (e) {} };
+  const delay = (opts && opts.delayMs) || 0;
+  if (delay) setTimeout(launch, delay); else launch();
+  return { ok: true, browser: b.name };
+}
+
+module.exports = { resolveHiggsfield, installHiggsfield, authLogout, openPrivateWindow, npmGlobalPrefix, candidatePaths,
                    listWorkspaces, workspaceStatus, setWorkspace, unsetWorkspace };
