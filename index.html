@@ -275,6 +275,14 @@
   .pill.failed{color:var(--danger);background:var(--danger-wash);}
 
   .result video{width:100%;display:block;border:1px solid var(--border);margin-top:2px;}
+
+/* The element's six timestamp boxes. They replaced a single "% of the room per
+   second" field: the operator sets when it is on each wall and the tool reads
+   the crossing speed off that, rather than the other way round. */
+input.winbox { width:62px; padding:2px 4px; font-family:var(--mono); font-size:11px; text-align:right; }
+td.winspan { font-family:var(--mono); font-size:10px; color:var(--muted-dim); padding-left:8px; white-space:nowrap; }
+td.winspan.bad { color:var(--danger); }
+#elementWindows td, #elementWindows th { padding:2px 4px; }
 </style>
 </head>
 <body>
@@ -567,9 +575,31 @@ table.rsr .rsr-n { color: var(--muted-dim); white-space: nowrap; }
           <option value="left_to_right">Left → right</option>
         </select>
       </div>
+      <div class="f" style="min-width:250px;">
+        <label title="When the element is on each wall, in seconds from the start of that wall's clip. Nothing may point past the end of the clip. The crossing speed is read off these times, not set separately - a wall with a 1.5s window is crossed in 1.5s.">Enter / exit per wall (seconds)</label>
+        <table class="stat" id="elementWindows" style="margin:0;">
+          <tr><th style="text-align:left;">Wall</th><th class="num">Enter</th><th class="num">Exit</th><th></th></tr>
+          <tr><td>Left</td>
+              <td><input type="number" class="winbox" id="elWinLeftIn"   min="0" step="0.1"></td>
+              <td><input type="number" class="winbox" id="elWinLeftOut"  min="0" step="0.1"></td>
+              <td class="winspan" id="elWinLeftSpan"></td></tr>
+          <tr><td>Centre</td>
+              <td><input type="number" class="winbox" id="elWinCenterIn"  min="0" step="0.1"></td>
+              <td><input type="number" class="winbox" id="elWinCenterOut" min="0" step="0.1"></td>
+              <td class="winspan" id="elWinCenterSpan"></td></tr>
+          <tr><td>Right</td>
+              <td><input type="number" class="winbox" id="elWinRightIn"   min="0" step="0.1"></td>
+              <td><input type="number" class="winbox" id="elWinRightOut"  min="0" step="0.1"></td>
+              <td class="winspan" id="elWinRightSpan"></td></tr>
+        </table>
+      </div>
       <div class="f">
-        <label title="Measured off the fall butterfly: 18.3% of total wall width per second, ~1.8s per wall.">Speed %/sec</label>
-        <input type="number" id="rigElementRate" value="17.5" min="1" step="0.5">
+        <label title="How tall the element is as a percent of the frame height, identical on all three walls. Nothing used to state this, and one delivered set drew small distant owls on one wall and a single close-up owl filling half the frame on another - from the same prompt and the same reference picture.">Size % of height</label>
+        <input type="number" id="rigElementSize" value="12" min="1" max="90" step="1">
+      </div>
+      <div class="f">
+        <label title="How far down the frame it crosses, as a percent of frame height from the top edge. Identical on all three walls: the audience follows one continuous line across the room, so a bird that crosses high on one wall and low on the next reads as two different flights. One delivered set had exactly that.">Height % from top</label>
+        <input type="number" id="rigElementHeight" value="35" min="1" max="95" step="1">
       </div>
       <div class="f" style="min-width:210px;">
         <label title="Sent to Higgsfield as an extra reference on all three walls, so the thing that crosses is the same object on each - not three different inventions of the same description.">Reference picture</label>
@@ -723,6 +753,10 @@ let rigRulesCache = { left:'', center:'', right:'' };
 // actually sent for video now; rigRulesCache stays as the prose view.
 let rigRulesJsonCache = { left:null, center:null, right:null };
 let rigState = null;
+// The server's element timetable (rigspec.elementSchedule for all three walls,
+// in journey order). Cached here so the timeline table renders the SAME numbers
+// the prompts carry rather than a second guess at them.
+let elementPlanCache = null;
 
 // A dead server and a failing API call are completely different problems, and
 // until now both surfaced as the browser's bare "Failed to fetch" — which then
@@ -2978,8 +3012,18 @@ function readRigFromForm(){
       enabled: !!subject,
       subject,
       direction: el('rigElementDir').value,
-      ratePctPerSec: Math.max(1, parseFloat(el('rigElementRate').value) || 17.5),
-      perWallSec: +(33.3 / Math.max(1, parseFloat(el('rigElementRate').value) || 17.5)).toFixed(2),
+      sizePctOfHeight: Math.min(90, Math.max(1, parseFloat(el('rigElementSize').value) || 12)),
+      heightPctFromTop: Math.min(95, Math.max(1, parseFloat(el('rigElementHeight').value) || 35)),
+      // THE OPERATOR SETS THE TIMES; the crossing speed is read off them. The
+      // "% of the room per second" box this replaced was a unit nobody thinks
+      // in, and its own default asked for a 5.71s crossing inside a 5s clip.
+      windows: readElementWindows(),
+      // perWallSec is NOT sent any more. The page worked it out as 33.3/rate
+      // and rig.js stored a flat 1.9s, so whichever of the two a reader
+      // happened to consult decided the timing, and moving the rate box
+      // changed one of them and not the other. rigspec.elementSchedule is the
+      // only place it is computed now, and it also checks the crossing fits
+      // inside the clip - which at the default rate it did not.
       entrySec: 2.0,
     },
   };
@@ -2997,7 +3041,9 @@ function writeRigToForm(rig){
   const c = rig.element || {};
   el('rigElement').value = c.subject || '';
   el('rigElementDir').value = c.direction || 'right_to_left';
-  el('rigElementRate').value = c.ratePctPerSec ?? 17.5;
+  el('rigElementSize').value = c.sizePctOfHeight ?? 12;
+  el('rigElementHeight').value = c.heightPctFromTop ?? 35;
+  writeElementWindows(c.windows, rig.durationSec ?? 5);
   try { renderElementRef(); } catch (e) {}
   rigFieldVisibility(RIGMOVE_NORMALISE(rig.intent));
 }
@@ -3028,6 +3074,7 @@ function applyRigResponse(data){
     refreshImageFixedRulesDisplay();
   }
   rigState = data.rig || rigState;
+  if ('elementPlan' in data) elementPlanCache = data.elementPlan;
   document.getElementById('rigSummary').textContent = data.summary ? `Rig: ${data.summary}` : '';
   const note = (data.applied && data.applied.calibrationNote) || '';
   const law = data.rules && data.rules.center
@@ -3048,7 +3095,8 @@ async function pushRig(){
   }
 }
 
-['rigIntent','rigYaw','rigTilt','rigElement','rigElementDir','rigElementRate']
+['rigIntent','rigYaw','rigTilt','rigElement','rigElementDir','rigElementSize','rigElementHeight',
+ 'elWinLeftIn','elWinLeftOut','elWinCenterIn','elWinCenterOut','elWinRightIn','elWinRightOut']
   .forEach(id => document.getElementById(id).addEventListener('change', pushRig));
 
 // Speed and Clip seconds are independent (see pushSpeed/pushDuration above).
@@ -3062,6 +3110,16 @@ document.getElementById('rigCentre')
   .addEventListener('change', () => pushSpeed().catch(() => {}));
 document.getElementById('rigDuration')
   .addEventListener('change', () => pushDuration().catch(() => {}));
+// The clip length is the ceiling on all six element timestamps, so moving it has
+// to move their max and re-flag any row that now points past the end.
+document.getElementById('rigDuration').addEventListener('change', () => {
+  const d = Math.max(1, parseInt(document.getElementById('rigDuration').value, 10) || 5);
+  EL_WALLS.forEach(w => ['enter', 'exit'].forEach(k => {
+    const box = document.getElementById(elWinId(w, k));
+    if (box) box.max = d;
+  }));
+  markElementWindows(d);
+});
 
 // Changing the preset or the clip length re-reads the inspector immediately, so
 // the numbers visibly change the moment you pick a different move rather than
@@ -3551,28 +3609,102 @@ function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); 
 // confidence if you can see the hand-off times.
 function renderElementTimeline(rig){
   const wrap = document.getElementById('elementTimeline');
+  // THE SCHEDULE COMES FROM THE SERVER. This function used to work it out here
+  // from c.perWallSec, which was a THIRD copy of the same arithmetic (the page
+  // wrote 33.3/rate, rig.js kept a flat 1.9s, principles.js read whichever it
+  // was handed). They disagreed, so the timetable on screen was not necessarily
+  // the timetable in the prompt. rigspec.elementSchedule is the only copy now,
+  // and it also refuses a crossing that does not fit inside the clip.
+  const plan = elementPlanCache;
   const c = rig && rig.element;
-  if (!c || !c.enabled || !c.subject) { wrap.innerHTML = ''; return; }
-  const dir = c.direction === 'left_to_right' ? 'left_to_right' : 'right_to_left';
-  const order = dir === 'right_to_left' ? ['right','center','left'] : ['left','center','right'];
-  const perWall = c.perWallSec || 1.9;
-  const entry = c.entrySec != null ? c.entrySec : 2.0;
-  const enterEdge = dir === 'right_to_left' ? 'RIGHT' : 'LEFT';
-  const exitEdge  = dir === 'right_to_left' ? 'LEFT' : 'RIGHT';
-  const rows = order.map((w, i) => {
-    const inAt = (entry + i * perWall).toFixed(2);
-    const outAt = (entry + (i + 1) * perWall).toFixed(2);
-    return `<tr><td>${i + 1}</td><td><b>${w}</b></td><td class="num">${inAt}s</td>` +
-           `<td class="num">${outAt}s</td><td>enters ${enterEdge}, exits ${exitEdge}</td></tr>`;
-  }).join('');
-  const total = (entry + 3 * perWall).toFixed(2);
+  if (!plan || !plan.rows || !plan.rows.length || !c || !c.enabled || !c.subject) {
+    wrap.innerHTML = ''; return;
+  }
+  // Frames as well as seconds: the frame numbers are what the contract states,
+  // and they are the thing a delivered clip can be checked against exactly.
+  const rows = plan.rows.map((r, i) =>
+    `<tr><td>${i + 1}</td><td><b>${r.wall}</b></td>` +
+    `<td class="num">${r.inAt.toFixed(2)}s</td><td class="num">${r.outAt.toFixed(2)}s</td>` +
+    `<td class="num">f${r.inFrame}–f${r.outFrame}</td>` +
+    `<td class="num">${r.onScreenSec.toFixed(2)}s</td>` +
+    `<td>enters ${r.enterEdge}, exits ${r.exitEdge}</td></tr>`
+  ).join('');
+  const first = plan.rows[0], last = plan.rows[plan.rows.length - 1];
+  const count = first.count != null ? first.count : null;
+  const warn = (plan.notes && plan.notes.length)
+    ? `<div class="rsr-warn">${esc(plan.notes.join(' '))}</div>` : '';
   wrap.innerHTML = `<table class="stat">` +
-    `<tr><th>#</th><th>Wall</th><th class="num">On</th><th class="num">Off</th><th>Edges</th></tr>` +
-    rows + `</table>` +
-    `<div class="statusline" style="margin-top:6px;">One ${c.subject}, ${dir.replace(/_/g,'-')}, ` +
-    `${perWall}s per wall — clear of the rig by ${total}s. Each wall is told it is already mid-flight and ` +
-    `cut off by the frame edge, so the hand-offs join up instead of three objects starting and stopping.</div>`;
+    `<tr><th>#</th><th>Wall</th><th class="num">Enter</th><th class="num">Exit</th>` +
+    `<th class="num">Frames</th><th class="num">On screen</th><th>Edges</th></tr>` +
+    rows + `</table>` + warn +
+    `<div class="statusline" style="margin-top:6px;">` +
+    `${count != null ? count + ' x ' : ''}${esc(first.subject)}, ` +
+    `${first.direction.replace(/_/g,'-')}, ${first.sizePctOfHeight}% of frame height at ` +
+    `${first.heightPctFromTop}% down. ` +
+    `Speed is read off your times, not set: ` +
+    plan.rows.map(r => `${r.wall} ${r.crossRateFrameWidthsPerSec}`).join(', ') +
+    ` frame-widths per second. The journey runs ${first.firstEnter.toFixed(2)}s–` +
+    `${last.lastExit.toFixed(2)}s of a ${first.durationSec}s clip, and each wall is given its two ` +
+    `frame numbers as a hard in and out.</div>`;
 }
+
+// ---- the travelling element's six timestamps -------------------------------
+// These replaced a single "% of the room per second" field. Two reasons, both
+// from delivered output: the pace box is a unit nobody thinks in (its default
+// of 17.5%/s asks for a 5.71s crossing, which does not fit a 5s clip at all),
+// and the windows it produced were the thing that actually mattered - so the
+// number that mattered was being derived from one chosen without seeing it.
+// Now the windows ARE the input and rigspec reads the speed off them.
+const EL_WALLS = ['left', 'center', 'right'];
+function elWinId(w, which){
+  return 'elWin' + w.charAt(0).toUpperCase() + w.slice(1) + (which === 'enter' ? 'In' : 'Out');
+}
+function readElementWindows(){
+  const out = {};
+  for (const w of EL_WALLS) {
+    const a = parseFloat(document.getElementById(elWinId(w, 'enter')).value);
+    const b = parseFloat(document.getElementById(elWinId(w, 'exit')).value);
+    out[w] = { enter: Number.isFinite(a) ? a : 0, exit: Number.isFinite(b) ? b : 0 };
+  }
+  return out;
+}
+function writeElementWindows(wins, dur){
+  const d = Number(dur) || 5;
+  // Sensible first pass for a fresh rig: the relay chained across the clip in
+  // journey order, so the boxes are never empty and never point past the end.
+  const fallback = { right: { enter: +(d * 0.1).toFixed(1), exit: +(d * 0.4).toFixed(1) },
+                     center: { enter: +(d * 0.4).toFixed(1), exit: +(d * 0.7).toFixed(1) },
+                     left: { enter: +(d * 0.7).toFixed(1), exit: +d.toFixed(1) } };
+  for (const w of EL_WALLS) {
+    const src = (wins && wins[w]) ? wins[w] : fallback[w];
+    for (const k of ['enter', 'exit']) {
+      const box = document.getElementById(elWinId(w, k));
+      box.value = src[k];
+      box.max = d;            // the clip length is a hard ceiling on both boxes
+    }
+  }
+  markElementWindows(d);
+}
+// Show each wall's on-screen length beside its row, and colour it when the row
+// cannot be obeyed: past the end of the clip, or an exit at or before its entry.
+function markElementWindows(dur){
+  const d = Number(dur) || Number(document.getElementById('rigDuration').value) || 5;
+  for (const w of EL_WALLS) {
+    const a = parseFloat(document.getElementById(elWinId(w, 'enter')).value);
+    const b = parseFloat(document.getElementById(elWinId(w, 'exit')).value);
+    const cell = document.getElementById('elWin' + w.charAt(0).toUpperCase() + w.slice(1) + 'Span');
+    if (!cell) continue;
+    const bad = !(Number.isFinite(a) && Number.isFinite(b)) || b <= a || a < 0 || b > d;
+    cell.className = 'winspan' + (bad ? ' bad' : '');
+    cell.textContent = bad
+      ? (b > d ? 'past the ' + d + 's clip' : 'exit must be after enter')
+      : (b - a).toFixed(2) + 's on screen';
+  }
+}
+EL_WALLS.forEach(w => ['enter', 'exit'].forEach(k => {
+  const box = document.getElementById(elWinId(w, k));
+  if (box) box.addEventListener('input', () => markElementWindows());
+}));
 
 // The element's reference picture. Stored once on the rig, not per wall -
 // it is one object making one journey.
@@ -3861,8 +3993,16 @@ async function loadRigRules(){
   if (!sel.options.length) {
     sel.innerHTML = Object.entries(data.intents).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
   }
+  // rigState FIRST. writeRigToForm calls renderElementRef(), which reads the
+  // element's picture out of rigState - and on a fresh page load rigState was
+  // still null at that point, so the row said "none" even with a picture
+  // attached, and generate() (which reads the same field) attached nothing.
+  // Until someone touched a rig control, the element reference did not exist as
+  // far as the page was concerned.
+  rigState = data.rig || rigState;
   writeRigToForm(data.rig);
   applyRigResponse(data);
+  try { renderElementTimeline(data.rig); } catch (e) {}
 }
 
 // ================= LAYOUT: COLLAPSE + DISCLOSURE =================
