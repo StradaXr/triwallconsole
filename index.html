@@ -2736,10 +2736,6 @@ function renderPreflight(d){
       : '';
     const loginBtn = (!c.ok && c.canLogin)
       ? `<button class="btn small" data-login="${c.id}">Sign in</button>` : '';
-    // Signing out and in again reuses whoever the BROWSER is signed in as, so
-    // choosing a different account needs its own path: a private window.
-    const switchBtn = (c.id === 'higgsfield' && (c.canLogin || c.canLogout))
-      ? `<button class="btn ghost small" data-login="${c.id}" data-switch="1" title="Signs this app out and opens Higgsfield sign-in in a private browser window, so you pick the account instead of the browser reusing the one it is already signed in as">Switch account</button>` : '';
     const testBtn = c.canTest
       ? `<button class="btn ghost small" data-test="${c.id}" title="Makes one real call (~$0.06) to prove sign-in actually works">Test</button>` : '';
     const installBtn = c.canInstall
@@ -2778,7 +2774,7 @@ function renderPreflight(d){
         ${wsPick}
         ${fix}
       </div>
-      <div class="acts">${installBtn}${loginBtn}${switchBtn}${testBtn}${logoutBtn}</div>
+      <div class="acts">${installBtn}${loginBtn}${testBtn}${logoutBtn}</div>
     </div>`;
   }).join('');
   const banner = d.allRequiredOk
@@ -2879,10 +2875,6 @@ Run this yourself in a terminal:
   }
   const login = e.target.closest('[data-login]');
   if (!login) return;
-  const switching = login.dataset.switch === '1';
-  if (switching && !confirm('Switch Higgsfield account?\n\nThis signs the app out, then opens Higgsfield sign-in in a '
-      + 'PRIVATE browser window. Sign in there with the account you want and click Allow. A normal Higgsfield tab '
-      + 'will also open - the app ignores it automatically, so just close it.')) return;
   // Each click is a new attempt (the server replaces any pending one), so an
   // older click's wait loop must stand down rather than report on it.
   const attempt = ++hfLoginAttempt;
@@ -2891,7 +2883,7 @@ Run this yourself in a terminal:
   login.disabled = true;
   try {
     const r = await api('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ which: login.dataset.login, switchAccount: switching }) });
+      body: JSON.stringify({ which: login.dataset.login }) });
     // HIGGSFIELD SIGNS IN IN THE BROWSER, NOT IN A CONSOLE. The server runs the
     // CLI itself and watches it, so the button waits here instead of telling the
     // operator to go and read a terminal window. Claude still needs one — it is
@@ -2924,14 +2916,9 @@ Run this yourself in a terminal:
         if (attempt !== hfLoginAttempt) return;
         if (st.url && help.dataset.url !== st.url) {
           help.dataset.url = st.url;
-          const lead = switching ? st.note + ' '
-            : 'Approve the sign-in in the tab that opened. Tab missing, or the Higgsfield page stuck loading? ';
-          help.textContent = lead;
-          const a = document.createElement('a');
-          a.href = st.url; a.target = '_blank'; a.rel = 'noreferrer';
-          a.textContent = 'The sign-in link';
-          help.appendChild(a);
-          help.appendChild(document.createTextNode(' can also be copied into a private/incognito window.'));
+          help.innerHTML = 'Approve the sign-in in the tab that opened. Tab missing, or the Higgsfield page '
+            + 'stuck loading? <a href="' + st.url.replace(/"/g, '&quot;') + '" target="_blank" rel="noreferrer">Open '
+            + 'the sign-in page</a> — or copy that link into a private/incognito window.';
         }
         if (st.status !== 'pending') { help.remove(); }
         if (st.status === 'ok') {

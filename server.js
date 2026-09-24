@@ -801,162 +801,23 @@ function authorizeUrlFromCliOutput(buf) {
   } catch (e) { return null; }
 }
 
-// SWITCHING ACCOUNT: ONLY THE PRIVATE WINDOW'S APPROVAL COUNTS.
-//
-// Opening a private window was not enough. The CLI always opens a NORMAL tab
-// too (it calls the OS directly; BROWSER is ignored - tested), and that tab,
-// still holding the old account's higgsfield.ai session, went through consent
-// and hit the callback on its own ten seconds later, long before anyone had
-// typed the new account into the private window. Measured from browser
-// history: every switch finished as the old account that way.
-//
-// So the callback is filtered. The CLI listens on 127.0.0.1 only, on its own
-// default port. NOT a port of our choosing: Higgsfield only accepts
-// pre-registered redirect URIs, and a random one came back as
-//   invalid_request: The 'redirect_uri' parameter does not match any of the
-//   OAuth 2.0 Client's pre-registered redirect urls
-// Chrome resolves `localhost` to ::1 FIRST (tested:
-// with both listening, every request went to ::1), so a gate on [::1]:port sees
-// both tabs' callbacks before the CLI does. The private window is opened at
-// /auth/private-start on this server, which gives it a one-time cookie before
-// sending it on to Higgsfield; localhost cookies are shared across ports
-// (tested), so its callback arrives carrying it. Only that callback is passed
-// through to the CLI. The normal tab's is answered with a page saying it was
-// ignored.
-const HF_DEFAULT_CALLBACK_PORT = 8765;   // what `hf auth login` uses and Higgsfield has registered
-
-const IGNORED_CALLBACK_HTML = '<!doctype html><meta charset="utf-8"><title>Ignored</title>'
-  + '<body style="font:15px system-ui;margin:48px;max-width:560px;line-height:1.5">'
-  + '<h2>This tab was ignored</h2><p>It is signed in to Higgsfield as the account you are switching '
-  + '<b>away from</b>, so the Tri-Wall Console did not use it.</p><p>Finish signing in in the '
-  + '<b>private window</b> the app opened, with the account you want. You can close this tab.</p>';
-
-async function startCallbackGate(nonce, port) {
-  {
-    const gate = http.createServer((req, res) => {
-      if (!req.url.startsWith('/callback')) { res.writeHead(404); return res.end(); }
-      const marked = (req.headers.cookie || '').split(/;\s*/).includes('hfswitch=' + nonce);
-      if (!marked) {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(IGNORED_CALLBACK_HTML);
-      }
-      const up = http.get({ host: '127.0.0.1', port, path: req.url, headers: { host: 'localhost:' + port } }, r => {
-        res.writeHead(r.statusCode, r.headers); r.pipe(res);
-      });
-      up.on('error', e => { res.writeHead(502); res.end('Could not reach the Higgsfield CLI: ' + e.message); });
-    });
-    const ok = await new Promise(r => { gate.once('error', () => r(false)); gate.listen(port, '::1', () => r(true)); });
-    if (ok) return { port, gate };
-  }
-  return null;   // no IPv6 loopback on this machine, or ::1:port already taken
-}
-
-function callbackPortOf(authorizeUrl) {
-  try {
-    const ru = new URL(authorizeUrl).searchParams.get('redirect_uri');
-    return ru ? Number(new URL(ru).port) || 80 : null;
-  } catch (e) { return null; }
-}
-
-let hfLoginGate = null;
-
-// DEFUSING THE NORMAL TAB. The gate above makes the normal tab's approval
-// harmless, but the tab still came to the front showing the OLD account's
-// consent page with no way to pick another - which is what the operator saw
-// and reasonably took as "it forces me onto Gmail", while the private window
-// sat behind it. The CLI opens that tab by handing the OS a local
-// sign-in.html that meta-refreshes to Higgsfield, written under its temp dir.
-// So in switch mode the CLI gets a temp dir of our own, we watch it, and
-// rewrite sign-in.html the moment it appears: measured 61 ms after spawn, 9 ms
-// after the CLI printed the path, and Chrome loaded the rewritten page and
-// never went on to Higgsfield. The gate stays as the backstop if that race is
-// ever lost.
-const DEFUSED_SIGNIN_HTML = '<!doctype html><meta charset="utf-8"><title>Use the private window</title>'
-  + '<body style="font:15px system-ui;margin:48px;max-width:560px;line-height:1.5">'
-  + '<h2>Use the private window</h2><p>You are switching Higgsfield accounts. This normal tab is signed in '
-  + 'as the account you are switching <b>away from</b>, so the Tri-Wall Console has disabled it.</p>'
-  + '<p>Sign in in the <b>private (incognito) window</b> the app opened, with the account you want, and click '
-  + '<b>Allow</b>. You can close this tab.</p>';
-
-function defuseSignInPage(dir, onUrl) {
-  let done = false;
-  let w = null;
-  try {
-    w = fs.watch(dir, { recursive: true }, (ev, name) => {
-      if (done || !name || !/sign-in\.html$/i.test(String(name))) return;
-      const f = path.join(dir, String(name));
-      try {
-        const html = fs.readFileSync(f, 'utf8');
-        const m = html.match(/url=(https:\/\/[^"'>\s]+)/i);
-        if (!m) return;                        // not fully written yet - wait for the next event
-        onUrl(m[1].replace(/&amp;/g, '&'));
-        fs.writeFileSync(f, DEFUSED_SIGNIN_HTML);
-        done = true;
-        w.close();
-      } catch (e) { /* mid-write; the next event retries */ }
-    });
-  } catch (e) { return () => {}; }
-  return () => { try { w.close(); } catch (e) {} };
-}
-
-// `opts.privateWindow`: switch account - private window plus the callback
-// gate above. A plain Sign in does neither.
-async function beginHiggsfieldLogin(opts) {
-  const privateWindow = !!(opts && opts.privateWindow);
+function beginHiggsfieldLogin() {
   if (hfLoginChild) { try { hfLoginChild.kill(); } catch (e) {} hfLoginChild = null; }
-  if (hfLoginGate) { try { hfLoginGate.close(); } catch (e) {} hfLoginGate = null; }
   hfLogin = { status: 'pending', url: null, message: 'Starting sign-in…',
               account: null, workspace: null, startedAt: Date.now() };
   const me = hfLogin;
   let buf = '';
 
-  const args = ['auth', 'login'];
-  let gate = null, capturedUrl = null, stopDefuse = () => {}, authTmp = null;
-  const env = Object.assign({}, process.env);
-  if (privateWindow) {
-    authTmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'triwall-hfauth-'));
-    env.TEMP = authTmp; env.TMP = authTmp;
-    stopDefuse = defuseSignInPage(authTmp, u => { capturedUrl = u; });
-    me.switchNonce = crypto.randomBytes(16).toString('hex');
-    // Up before the CLI starts, on the port it will use - the normal tab can
-    // reach the callback within two seconds of the CLI opening it.
-    gate = await startCallbackGate(me.switchNonce, HF_DEFAULT_CALLBACK_PORT).catch(() => null);
-    if (gate) hfLoginGate = gate.gate;
-  }
-
-  const child = spawn(HIGGSFIELD_BIN, args,
-                      { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env });
+  const child = spawn(HIGGSFIELD_BIN, ['auth', 'login'],
+                      { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   hfLoginChild = child;
   const scan = (chunk) => {
     buf += String(chunk);
     if (!me.url) {
-      // Once defused, the file no longer holds the URL - use the copy taken first.
-      const u = capturedUrl || authorizeUrlFromCliOutput(buf);
+      const u = authorizeUrlFromCliOutput(buf);
       if (u) {
         me.url = u;
         me.message = 'Browser opened — approve the sign-in there.';
-        const cbPort = callbackPortOf(u);
-        if (privateWindow && gate && cbPort && cbPort !== gate.port) {
-          try { gate.gate.close(); } catch (e) {}
-          gate = null; hfLoginGate = null;
-          startCallbackGate(me.switchNonce, cbPort).then(g => {
-            if (g && me === hfLogin) { gate = g; hfLoginGate = g.gate; }
-          }).catch(() => {});
-        }
-        if (privateWindow) {
-          // Through /auth/private-start when gated, so the window gets its cookie.
-          const w = CONNECT.openPrivateWindow(gate
-            ? 'http://localhost:' + PORT + '/auth/private-start?n=' + me.switchNonce : u,
-            { delayMs: 1500 });   // after the normal tab, so the private window lands on top
-          me.message = !w.ok
-            ? 'Could not open a private window (' + w.error + '). Copy the sign-in link into one yourself.'
-            : gate
-              ? 'A ' + w.browser + ' window opened. Sign in there with the account you want and click Allow. '
-                + 'The normal tab that also opened says "Use the private window" — just close it.'
-              : 'A ' + w.browser + ' window opened, but this machine has no IPv6 loopback, so the normal '
-                + 'Higgsfield tab cannot be filtered out and may sign in as the old account first. Sign out '
-                + 'at higgsfield.ai in your normal browser, then try again.';
-        }
       }
     }
   };
@@ -968,9 +829,6 @@ async function beginHiggsfieldLogin(opts) {
   });
   child.on('close', async (code) => {
     if (hfLoginChild === child) hfLoginChild = null;
-    stopDefuse();
-    if (authTmp) { try { fs.rmSync(authTmp, { recursive: true, force: true }); } catch (e) {} }
-    if (gate) { try { gate.gate.close(); } catch (e) {} if (hfLoginGate === gate.gate) hfLoginGate = null; }
     if (me !== hfLogin) return;              // replaced by a newer attempt
     if (me.status === 'error') return;
     if (code !== 0) {
@@ -2723,28 +2581,12 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       const body = JSON.parse((await readBody(req)).toString('utf8'));
       const which = body.which === 'claude' ? 'claude' : 'higgsfield';
       if (which === 'higgsfield') {
-        // Switching account: drop the current token first, so a sign-in that
-        // is abandoned half way does not leave the old account quietly active.
-        if (body.switchAccount && HIGGSFIELD_RESOLVED) CONNECT.authLogout(HIGGSFIELD_BIN);
-        const st = await beginHiggsfieldLogin({ privateWindow: !!body.switchAccount });
+        const st = beginHiggsfieldLogin();
         return sendJson(res, 200, { ok: true, inBrowser: true, status: st.status,
                                     url: st.url, note: st.message });
       }
       const r = PRE.openLoginTerminal(which, { higgsfield: HIGGSFIELD_BIN });
       return sendJson(res, r.ok ? 200 : 500, r);
-    }
-
-    // The switch-account private window lands here first - see startCallbackGate.
-    if (req.method === 'GET' && p === '/auth/private-start') {
-      const n = url.searchParams.get('n') || '';
-      if (!hfLogin || hfLogin.status !== 'pending' || !hfLogin.switchNonce
-          || n !== hfLogin.switchNonce || !hfLogin.url) {
-        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-        return res.end('This sign-in link has expired. Click Switch account in the Tri-Wall Console again.');
-      }
-      res.writeHead(302, { 'Set-Cookie': 'hfswitch=' + n + '; Path=/; HttpOnly; SameSite=Lax',
-                           'Location': hfLogin.url });
-      return res.end();
     }
 
     // Polled by the page while the browser tab is open.
