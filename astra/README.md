@@ -54,5 +54,7 @@ do not process the same queue manually while the worker is active.
 
 Source lives in this Git repository. Styles reuse root index.html, angles use
 `theatre.js`. Local state, generated images and logs are ignored by Git.
+The shared main-branch theme, Space Grotesk/JetBrains Mono fonts and light/dark
+choice are also used by Astra. Its image controls remain specific to Codex.
 The server binds to 127.0.0.1, validates Host/Origin, requires a per-process
 mutation token and serves allowlisted files. The legacy video console is separate.

@@ -5,27 +5,83 @@
 <title>Tri-Wall Console</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* Riso: paper stock, two inks, hard offset shadows.
+     Orange is the action ink. Green means MEASURED AND CORRECT and is used
+     for nothing else, so a green mark on this page always means the same
+     thing. --line, --card and --surface-1 were referenced by the Library and
+     modal rules but never defined anywhere; they are defined here now. */
   :root{
-    --bg:#0A0C10;
-    --surface:#12151B;
-    --surface-2:#181C24;
-    --border:#262B34;
-    --border-soft:#1D2129;
-    --text:#E8ECEF;
-    --muted:#7E8794;
-    --muted-dim:#565D68;
-    --accent:#2FE6C4;
-    --accent-strong:#21C2A3;
-    --accent-wash:rgba(47,230,196,.12);
-    --accent-glow:rgba(47,230,196,.28);
-    --warn:#E8A23D;
-    --warn-wash:rgba(232,162,61,.14);
-    --danger:#E2604B;
-    --danger-wash:rgba(226,96,75,.14);
-    --display:'Big Shoulders Display', 'Arial Narrow', sans-serif;
-    --body:'IBM Plex Sans', system-ui, sans-serif;
-    --mono:'IBM Plex Mono', 'Consolas', monospace;
+    --bg:#F3F0E6;
+    --surface:#FCFBF5;
+    --surface-2:#E9E5D6;
+    --border:#CFC8B4;
+    --border-soft:#E2DCCA;
+    --text:#14130F;
+    --muted:#5C574A;
+    --muted-dim:#8A8272;
+    --accent:#F26419;
+    --accent-strong:#D4500C;
+    --accent-wash:rgba(242,100,25,.12);
+    --accent-glow:rgba(242,100,25,.30);
+    --warn:#B5730A;
+    --warn-wash:rgba(181,115,10,.14);
+    --danger:#C62828;
+    --danger-wash:rgba(198,40,40,.12);
+
+    --ink:#14130F;          /* the heavy outline colour */
+    --shadow:#14130F;       /* the hard offset shadow — separate from --ink,
+                               because in dark mode the outline goes light
+                               while the shadow has to stay dark */
+    --ok:#11845B;           /* green — verified, and nothing else */
+    --ok-wash:rgba(17,132,91,.13);
+    --paper:#FFF9F2;        /* text on top of the orange ink */
+    --riso-off:4px;         /* hard shadow offset */
+    --halftone:rgba(43,76,255,.10);
+    --ui-scale:1.15;        /* everything in this file is hardcoded px, so one
+                               scale is the only way to lift it all together */
+
+    --line:#CFC8B4;         /* was undefined — Library items had no border */
+    --card:#FCFBF5;         /* was undefined — Library items had no background */
+    --surface-1:#FCFBF5;    /* was undefined — modal fell back to a dark panel */
+
+    --display:'Space Grotesk', 'Big Shoulders Display', sans-serif;
+    --body:'Space Grotesk', 'IBM Plex Sans', system-ui, sans-serif;
+    --mono:'JetBrains Mono', 'IBM Plex Mono', 'Consolas', monospace;
+  }
+
+  /* Riso after dark. The stock goes to warm near-black and the ink goes light,
+     but the offset shadow stays darker than the card so it still reads as a
+     shadow rather than a glow. */
+  html[data-theme="dark"]{
+    --bg:#13120E;
+    --surface:#1C1A15;
+    --surface-2:#27241C;
+    --border:#3A3629;
+    --border-soft:#2A2720;
+    --text:#F4EFE3;
+    --muted:#A9A190;
+    --muted-dim:#79725F;
+    --accent:#FF7A2F;
+    --accent-strong:#E0620F;
+    --accent-wash:rgba(255,122,47,.14);
+    --accent-glow:rgba(255,122,47,.34);
+    --warn:#E0A53C;
+    --warn-wash:rgba(224,165,60,.15);
+    --danger:#F0705C;
+    --danger-wash:rgba(240,112,92,.15);
+
+    --ink:#4A4534;          /* outline — light enough to read on the stock */
+    --shadow:#080705;       /* shadow — darker than anything it falls on */
+    --ok:#3DBE7A;
+    --ok-wash:rgba(61,190,122,.15);
+    --paper:#140F08;        /* text on top of the orange ink */
+    --halftone:rgba(120,150,255,.07);
+
+    --line:#3A3629;
+    --card:#1C1A15;
+    --surface-1:#1C1A15;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);padding:36px 28px 64px;}
@@ -235,6 +291,11 @@
   .dropzone:hover{border-color:var(--accent);}
   .dropzone.drag{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-wash) inset;}
   .dropzone .dz-content{display:contents;}
+  .dropzone img.dz-inherited{opacity:.45;}
+  .dropzone .dz-inherit-tag.pending{background:var(--warn);color:var(--paper);}
+  .dropzone .dz-inherit-tag{position:absolute;left:0;right:0;bottom:0;padding:4px 8px;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--paper);background:var(--muted);text-align:center;}
   .dropzone img{width:100%;height:100%;object-fit:cover;display:block;}
   .dropzone span{padding:0 14px;}
   input[type=file]{display:none;}
@@ -275,6 +336,144 @@
   .pill.failed{color:var(--danger);background:var(--danger-wash);}
 
   .result video{width:100%;display:block;border:1px solid var(--border);margin-top:2px;}
+
+/* The element's six timestamp boxes. They replaced a single "% of the room per
+   second" field: the operator sets when it is on each wall and the tool reads
+   the crossing speed off that, rather than the other way round. */
+input.winbox { width:62px; padding:2px 4px; font-family:var(--mono); font-size:11px; text-align:right; }
+td.winspan { font-family:var(--mono); font-size:10px; color:var(--muted-dim); padding-left:8px; white-space:nowrap; }
+td.winspan.bad { color:var(--danger); }
+#elementWindows td, #elementWindows th { padding:2px 4px; }
+
+  /* ==========================================================================
+     RISO SKIN
+     Layered on top of the rules above rather than rewritten into them, so the
+     original stylesheet stays readable and this is one reviewable block.
+     Nothing below changes a selector name or an id — only how things look.
+     ========================================================================== */
+
+  /* Paper stock with a coarse halftone. Painted as a background-image rather
+     than an overlay element: an overlay would need a z-index and could land on
+     top of the modal, which sits at 9000. */
+  body{
+    background-color:var(--bg);
+    background-image:radial-gradient(var(--halftone) 1px, transparent 1px);
+    background-size:4px 4px;
+    zoom:var(--ui-scale);
+  }
+
+  /* Space Grotesk is wider than Big Shoulders, so the display sizes need to
+     come back down and the tracking needs to tighten. */
+  .masthead h1{font-weight:700;letter-spacing:-.03em;text-transform:none;font-size:38px;}
+  .card h2,.section-head h2,.conn .name,.wallcard-head .name,.modal h3{
+    letter-spacing:-.01em;text-transform:none;}
+  .tabbtn{letter-spacing:.02em;text-transform:none;font-size:14px;}
+
+  /* Elevation is a hard offset shadow — the Riso register error, made useful. */
+  .card,.wallcard,.rigbar,.statbox,.libitem,.metrics,.modal{
+    border:1.5px solid var(--ink);
+    box-shadow:var(--riso-off) var(--riso-off) 0 var(--shadow);
+  }
+  .wallcard.center{border-color:var(--ink);box-shadow:var(--riso-off) var(--riso-off) 0 var(--accent);}
+  .modal{box-shadow:8px 8px 0 var(--accent);}
+  .modal-back{background:rgba(20,19,15,.55);}
+
+  /* Buttons: the original put near-black text on the accent, which is
+     unreadable on orange. */
+  .btn{
+    border:1.5px solid var(--ink);color:var(--paper);
+    box-shadow:2px 2px 0 var(--shadow);
+    transition:transform .12s, box-shadow .12s, filter .15s;
+  }
+  .btn:hover:not(:disabled){filter:brightness(1.04);transform:translate(1px,1px);box-shadow:1px 1px 0 var(--shadow);}
+  .btn.ghost{background:var(--surface);color:var(--text);border-color:var(--ink);}
+  .btn.ghost:hover:not(:disabled){color:var(--accent-strong);border-color:var(--ink);box-shadow:1px 1px 0 var(--shadow);}
+  .btn:disabled{box-shadow:none;transform:none;}
+  .stepno{color:var(--paper);}
+
+  /* Inputs sit sunk into the stock. */
+  input[type=text],input[type=number],select,textarea{border:1.5px solid var(--ink);border-radius:0;}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:2px 2px 0 var(--accent);}
+  .dropzone{border:1.5px dashed var(--ink);}
+  .dropzone:hover{border-color:var(--accent);}
+
+  /* Media keeps a neutral backing rather than the old near-black. */
+  .wallcard .dropzone img,.wallcard .dropzone video{background:var(--surface-2);}
+
+  /* GREEN MEANS MEASURED AND CORRECT.
+     These states all read from --accent before, which now means "action".
+     Reserving green for verified keeps one colour with one meaning. */
+  .conn .dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-wash);}
+  .callout-ok{color:var(--ok);background:var(--ok-wash);border-left-color:var(--ok);}
+  .pill.completed{color:var(--ok);background:var(--ok-wash);}
+  .metrics dd.good{color:var(--ok);}
+  .statusline.ok{color:var(--ok);}
+  .ratebtn.on{background:var(--ok-wash);border-color:var(--ok);color:var(--ok);}
+  .rate-btn.on-up{border-color:var(--ok);color:var(--ok);background:var(--ok-wash);}
+  .rate-btn.on-down{border-color:var(--danger);color:var(--danger);background:var(--danger-wash);}
+
+  /* Fill the screen. The 1360px cap left most of a studio monitor empty, and
+     the three wall cards are the widest thing here. */
+  body{padding:30px 4vw 70px;}
+  .wrap{max-width:none;}
+
+  /* A hard offset shadow sits OUTSIDE the border box and does not affect
+     layout, so anything immediately following a shadowed card gets overlapped
+     by it — which is what happened to the Self-calibration heading under the
+     knowledge card. `.tabpanel > .section-head:first-child{margin-top:0}` has
+     always been in this file, implying a top margin that was never declared. */
+  .section-head{margin-top:calc(var(--riso-off) + 30px);}
+
+  /* Connections: required on one line, optional on the next.
+     The rows are generated flat, so the grouping comes from the is-required /
+     is-optional hook on each row. The :not() picks the FIRST optional row —
+     the only one with no optional sibling before it — and forces it back to
+     column 1, which starts a new line without needing a wrapper element. */
+  /* The wrapper keeps its id and its collapse behaviour — it just stops
+     drawing a box around everything, so each check reads as its own card on
+     the stock rather than rows inside one panel. */
+  #connCard{background:none;border:none;box-shadow:none;padding:0;}
+  /* stretch so cards on the same line share a height; the row spacing comes
+     from the cards' own top margin, which also makes room for the group
+     label — putting it in the grid gap would space the banner out too. */
+  #connList{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+    gap:16px;align-items:stretch;}
+  #connList > :not(.conn){grid-column:1/-1;}
+
+  .conn{position:relative;display:grid;grid-template-columns:1fr auto;
+    grid-template-rows:auto 1fr;margin-top:30px;
+    gap:10px 14px;align-items:start;padding:15px 16px;
+    border:1.5px solid var(--ink);background:var(--surface);
+    box-shadow:var(--riso-off) var(--riso-off) 0 var(--shadow);}
+  .conn:last-of-type{border-bottom:1.5px solid var(--ink);}
+  .conn > div:not(.acts){grid-column:1;grid-row:1;min-width:0;}
+  .conn .acts{grid-column:1/-1;grid-row:2;flex-direction:row;align-items:center;}
+  .conn .name{font-size:16px;}
+  /* the group label above already says which it is */
+  .conn .name .req{display:none;}
+
+  /* REQUIRED / OPTIONAL headings. There is no element to hang them on — the
+     rows are generated flat — so each is drawn above the FIRST card of its
+     group: the only one with no earlier sibling from the same group. */
+  .conn.is-optional:not(.is-optional ~ .is-optional){grid-column-start:1;}
+  .conn.is-required:not(.is-required ~ .is-required)::before{content:'Required';}
+  .conn.is-optional:not(.is-optional ~ .is-optional)::before{content:'Optional';}
+  .conn.is-required:not(.is-required ~ .is-required)::before,
+  .conn.is-optional:not(.is-optional ~ .is-optional)::before{
+    position:absolute;top:-27px;left:0;white-space:nowrap;font-family:var(--mono);
+    font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-dim);}
+
+  /* The status dot becomes a bordered chip in the top-right of its card. */
+  .conn .dot{grid-column:2;grid-row:1;align-self:start;
+    width:auto;height:auto;margin:0;border-radius:0;background:none;box-shadow:none;
+    border:1.5px solid currentColor;padding:3px 9px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;}
+  .conn .dot.ok{color:var(--ok);background:none;box-shadow:none;}
+  .conn .dot.bad{color:var(--danger);background:none;box-shadow:none;}
+  .conn .dot.opt{color:var(--warn);background:none;box-shadow:none;}
+  .conn .dot.ok::after{content:'Ready';}
+  .conn .dot.bad::after{content:'Missing';}
+  .conn .dot.opt::after{content:'Missing';}
 </style>
 </head>
 <body>
@@ -284,12 +483,12 @@
     <div>
       <img src="/assets/strada-logo.svg" alt="StradaXR" class="brandmark">
       <h1>Tri-Wall Console</h1>
-      <div class="tagline">One camera rig, three synchronized views. State what the physical camera does once — the locked rules for all three walls are derived from it, coupled and mirror-symmetric, so a push-in reads as one continuous move across the whole wall instead of three walls each pushing in separately.</div>
-      <div class="chatlink">Scene &amp; prompts sync from the <code>/tri-wall</code> conversation — click "Sync from chat" after asking Claude to draft.</div>
+      <div class="tagline">One camera rig, three synchronized views.<button class="whybtn" type="button" data-why="about" title="What that means, and how the scene syncs from the /tri-wall chat. Opens the console.">what this is</button></div>
     </div>
     <div style="text-align:right;">
       <div class="rig-diagram" style="justify-content:flex-end;"><div class="seg"></div><div class="seg center"></div><div class="seg"></div></div>
       <div class="rig-label">L · C · R</div>
+      <button class="btn ghost small" id="themeToggle" style="margin-top:14px;" title="Switch between the light and dark stock. Remembered on this machine.">Dark</button>
       <button class="btn ghost small" id="resetBtn" style="margin-top:14px;">Reset — new scene</button>
       <!-- Which code is on screen. Substituted by the server at serve time;
            if these placeholders are ever visible, something is serving
@@ -304,16 +503,15 @@
   </div>
   <div class="card" id="connCard" style="margin-bottom:26px;">
     <div id="connList"></div>
-    <p style="margin:6px 0 0;font-family:var(--mono);font-size:10.5px;color:var(--muted-dim);line-height:1.6;">
-      Sign-in is handled entirely by each vendor's own CLI in its own browser flow. This tool never asks for,
-      stores or transmits a password, API key or token — there is no field here that takes one. Your session
-      lives in your own home directory and your credits are billed to your own account.
+    <p style="margin:6px 0 0;">
+      <button class="whybtn" type="button" data-why="signin" style="margin-left:0;"
+        title="How sign-in works and what this tool never stores. Opens the console.">how sign-in works</button>
     </p>
   </div>
 
   <div class="setup" id="sceneRow">
     <div class="card" id="sceneCard">
-      <h2>Scene <span class="sub">describe the centre wall — option A only</span></h2>
+      <h2>Scene <span class="sub">describe the centre wall — option B only</span></h2>
       <textarea id="sceneInput" placeholder="Describe the whole shot: what's in it, lighting, action, camera movement and timing. Click Save scene, then use each wall's own Draft button below to fill in its prompt."></textarea>
       <div class="actions">
         <button class="btn small" id="saveSceneBtn" title="Saves this text as the scene, and clears every wall's own prompt field back to just its locked rules — draft each wall fresh from there">Save scene</button>
@@ -364,11 +562,11 @@
     </div>
   </div>
   <div class="modepick" id="imageSourceMode">
-    <button class="modebtn active" data-imode="text">
-      <b>A · Text prompt</b><span>Describe the centre scene and generate it. Nothing to upload.</span>
+    <button class="modebtn active" data-imode="image">
+      <b>A · Upload a centre image</b><span>You already have the centre frame. Left &amp; right are extended from it.</span>
     </button>
-    <button class="modebtn" data-imode="image">
-      <b>B · Upload a centre image</b><span>You already have the centre frame. Left &amp; right are extended from it.</span>
+    <button class="modebtn" data-imode="text">
+      <b>B · Text prompt</b><span>Describe the centre scene and generate it. Nothing to upload.</span>
     </button>
 
   </div>
@@ -387,7 +585,7 @@
       </label>
       <button class="btn small" id="draftVideoPromptsBtn" title="Have Claude write each wall's ambient-motion description by looking at that wall's own reference image — doesn't generate video, just drafts text for you to review">Draft in-scene motion — all 3 walls</button>
     </div>
-  <div id="decodeSection">
+  <div id="decodeSection" style="display:none;">
   <div class="section-head">
     <h2><span class="stepno">3A</span>Decoder <span class="sub">measure the centre clip, match it to a rig move, write it into the side rules</span></h2>
   </div>
@@ -443,11 +641,11 @@
   </div><!-- /decodeSection -->
   </div>
   <div class="modepick" id="videoSourceMode">
-    <button class="modebtn active" data-vmode="decoded">
-      <b>A · Decode a client clip</b><span>Upload the centre wall video. It is measured, matched against our C_ reference renders, and Apply writes that move into all three walls.</span>
+    <button class="modebtn active" data-vmode="text">
+      <b>A · Pick a preset camera path</b><span>No clip. Choose one of the C_ rig moves measured from our own nDisplay renders, and Apply writes it into all three walls.</span>
     </button>
-    <button class="modebtn" data-vmode="text">
-      <b>B · Pick a preset camera path</b><span>No clip. Choose one of the C_ rig moves measured from our own nDisplay renders, and Apply writes it into all three walls.</span>
+    <button class="modebtn" data-vmode="decoded">
+      <b>B · Decode a client clip</b><span>Upload the centre wall video. It is measured, matched against our C_ reference renders, and Apply writes that move into all three walls.</span>
     </button>
   </div>
   <div class="modehint" id="videoModeHint"></div>
@@ -467,7 +665,7 @@
     </div>
     <div class="f" id="rigCentreWrap">
       <label title="Trims the CENTRE wall only, on top of Speed %. The centre does not obey the speed dial the way the sides do - measured over three delivered sets it overshot its scale by 3-9x while the sides tracked what they were asked - so one dial cannot make both look right. 100% keeps the reference ratio between centre and sides; lower slows the centre without touching the sides.">Centre %</label>
-      <input type="number" id="rigCentre" value="100" min="1" max="400" step="5">
+      <input type="number" id="rigCentre" value="25" min="1" max="400" step="5">
     </div>
     <div class="f" id="rigYawWrap" style="display:none;">
       <label>Yaw °/sec</label>
@@ -485,6 +683,81 @@
 <style>
 .buildstamp{font-family:var(--mono);font-size:9.5px;line-height:1.5;color:var(--muted-dim);margin-top:10px;text-align:right;}
 .buildstamp.stale{color:var(--accent);}
+/* THE CONSOLE. This page explained itself in permanent paragraphs beside
+   every control - accurate, but it meant the operator read the same three
+   paragraphs every day to reach a number. The prose moves here: one drawer,
+   always reachable, never in the way. Nothing is deleted; anything that used
+   to be printed inline is logged here instead, keyed so a re-render updates
+   its entry rather than stacking duplicates. */
+.uiconsole{position:fixed;right:0;bottom:0;z-index:70;width:min(720px,96vw);
+  font-family:var(--mono);}
+.uiconsole-tab{display:flex;align-items:center;gap:8px;margin-left:auto;
+  border:1.5px solid var(--ink);border-bottom:none;background:var(--surface);
+  color:var(--text);font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;padding:7px 14px;cursor:pointer;
+  box-shadow:calc(-1 * var(--riso-off)) calc(-1 * var(--riso-off)) 0 var(--shadow);}
+.uiconsole-tab:hover{border-color:var(--accent);color:var(--accent);}
+.uiconsole-count{border:1px solid currentColor;padding:0 5px;font-size:10px;opacity:.75;}
+.uiconsole-body{border:1.5px solid var(--ink);background:var(--surface);
+  max-height:46vh;display:flex;flex-direction:column;
+  box-shadow:calc(-1 * var(--riso-off)) calc(-1 * var(--riso-off)) 0 var(--shadow);}
+.uiconsole.collapsed .uiconsole-body{display:none;}
+.uiconsole-head{display:flex;align-items:center;gap:10px;padding:8px 12px;
+  border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.uiconsole-head strong{font-family:var(--display);font-size:14px;}
+.uiconsole-head .sub{font-size:10px;color:var(--muted-dim);flex:1;text-transform:none;letter-spacing:0;}
+.uiconsole-list{overflow-y:auto;padding:4px 0;}
+.uic-entry{padding:8px 12px;border-bottom:1px solid var(--border-soft);}
+.uic-entry:last-child{border-bottom:none;}
+.uic-meta{display:flex;justify-content:space-between;gap:10px;font-size:9.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted-dim);margin-bottom:4px;}
+.uic-src{color:var(--accent);}
+.uic-body{font-size:11px;line-height:1.6;color:var(--muted);}
+.uic-body strong{color:var(--text);font-weight:500;}
+.uic-body table.rsr{margin-top:6px;width:100%;}
+.uic-body table.rsr tbody,
+.uic-body table.rsr tr,
+.uic-body table.rsr td{display:block;}
+.uic-body table.rsr tr{margin-bottom:7px;padding-left:8px;border-left:2px solid var(--border);}
+.uic-body table.rsr td{padding:0;}
+.uic-body table.rsr .rsr-a{display:none;}
+.uic-body table.rsr .rsr-n{white-space:normal;margin-top:2px;}
+.uiconsole-empty{padding:14px 12px;font-size:11px;color:var(--muted-dim);}
+/* The little round "explain this" button that replaces a paragraph. */
+.whybtn{border:1px solid var(--border);background:none;color:var(--muted);
+  font-family:var(--mono);font-size:10px;line-height:1;padding:3px 7px;cursor:pointer;
+  letter-spacing:.06em;text-transform:uppercase;margin-left:8px;vertical-align:middle;}
+.whybtn:hover{border-color:var(--accent);color:var(--accent);}
+.modehint:empty { display:none; }
+.vsp { margin-top:12px; border-top:1px solid var(--border-soft); padding-top:10px; }
+.vsp-head { font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-bottom:8px; }
+.vsp-head strong { color:var(--accent); font-weight:400; }
+.vsp-warn { color:var(--warn); }
+.vsp-row { display:grid; grid-template-columns:1fr 1.2fr 1fr; gap:8px; align-items:start;
+  max-width:620px; }
+.vsp-cell { min-width:0; }
+.vsp-label { font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--muted-dim); margin-bottom:4px; }
+.vsp-cell img { width:100%; display:block; aspect-ratio:16/9; object-fit:cover;
+  border:1.5px solid var(--ink); background:var(--surface-2); }
+.vsp-gap { aspect-ratio:16/9; border:1.5px dashed var(--border); display:flex; align-items:center;
+  justify-content:center; text-align:center; padding:0 8px; font-family:var(--mono);
+  font-size:10px; color:var(--muted-dim); }
+.setgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+.setitem { border:1.5px solid var(--ink); background:var(--surface);
+  box-shadow:var(--riso-off) var(--riso-off) 0 var(--shadow); padding:10px; }
+.setitem.live { border-color:var(--accent); box-shadow:var(--riso-off) var(--riso-off) 0 var(--accent-glow); }
+.setthumbs { display:grid; grid-template-columns:1fr 1.2fr 1fr; gap:3px; background:var(--border-soft); }
+.setthumbs img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:var(--surface-2); }
+.setthumbs .setempty { display:flex; align-items:center; justify-content:center; aspect-ratio:16/9;
+  background:var(--surface-2); color:var(--muted-dim); font-family:var(--mono); font-size:13px; }
+.setmeta { padding-top:9px; }
+.setname { width:100%; background:none; border:none; border-bottom:1px solid var(--border);
+  color:var(--text); font-family:var(--display); font-size:15px; font-weight:600; padding:2px 0; }
+.setname:focus { outline:none; border-bottom-color:var(--accent); }
+.setsub { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:5px; line-height:1.5; }
+.setsub strong { color:var(--accent); font-weight:400; }
+.setacts { display:flex; gap:6px; margin-top:9px; }
 .libgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
 .libitem { border:1px solid var(--line); border-radius:6px; overflow:hidden; background:var(--card); }
 .libitem video, .libitem img { width:100%; display:block; background:#000; aspect-ratio:16/9; object-fit:contain; }
@@ -507,10 +780,10 @@
    Selectors are deliberately over-qualified: `.btn.ghost` is (0,2,0) and its
    hover rule is (0,4,0), so a plain `.librateb` rule loses to both and a
    hovered red arrow would turn teal. These sit above them. */
-.btn.ghost.librateb { color:var(--muted-dim); border-color:var(--line); background:transparent; }
+.btn.ghost.librateb { color:var(--muted-dim); border-color:var(--ink); background:transparent; box-shadow:none; }
 .btn.ghost.librateb.on[data-rating="up"],
 .btn.ghost.librateb.on[data-rating="up"]:hover:not(:disabled) {
-  color:#3FD97A; border-color:#3FD97A; background:rgba(63,217,122,.14); }
+  color:var(--ok); border-color:var(--ok); background:var(--ok-wash); }
 .btn.ghost.librateb.on[data-rating="down"],
 .btn.ghost.librateb.on[data-rating="down"]:hover:not(:disabled) {
   color:var(--danger); border-color:var(--danger); background:var(--danger-wash); }
@@ -524,6 +797,8 @@ table.rsr .rsr-a { color: var(--muted-dim); }
 table.rsr .rsr-p { color: var(--text); }
 table.rsr .rsr-n { color: var(--muted-dim); white-space: nowrap; }
 .rsr-warn { color: var(--accent); font-family: var(--mono); font-size: 10.5px; margin-top: 5px; }
+.rsr-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.rsr-detail { margin-top: 8px; }
 .rsr-inline { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin: 4px 0 0; }
 .rsr-inline span { color: var(--muted-dim); }
 </style>
@@ -567,9 +842,31 @@ table.rsr .rsr-n { color: var(--muted-dim); white-space: nowrap; }
           <option value="left_to_right">Left → right</option>
         </select>
       </div>
+      <div class="f" style="min-width:250px;">
+        <label title="When the element is on each wall, in seconds from the start of that wall's clip. Nothing may point past the end of the clip. The crossing speed is read off these times, not set separately - a wall with a 1.5s window is crossed in 1.5s.">Enter / exit per wall (seconds)</label>
+        <table class="stat" id="elementWindows" style="margin:0;">
+          <tr><th style="text-align:left;">Wall</th><th class="num">Enter</th><th class="num">Exit</th><th></th></tr>
+          <tr><td>Left</td>
+              <td><input type="number" class="winbox" id="elWinLeftIn"   min="0" step="0.1"></td>
+              <td><input type="number" class="winbox" id="elWinLeftOut"  min="0" step="0.1"></td>
+              <td class="winspan" id="elWinLeftSpan"></td></tr>
+          <tr><td>Centre</td>
+              <td><input type="number" class="winbox" id="elWinCenterIn"  min="0" step="0.1"></td>
+              <td><input type="number" class="winbox" id="elWinCenterOut" min="0" step="0.1"></td>
+              <td class="winspan" id="elWinCenterSpan"></td></tr>
+          <tr><td>Right</td>
+              <td><input type="number" class="winbox" id="elWinRightIn"   min="0" step="0.1"></td>
+              <td><input type="number" class="winbox" id="elWinRightOut"  min="0" step="0.1"></td>
+              <td class="winspan" id="elWinRightSpan"></td></tr>
+        </table>
+      </div>
       <div class="f">
-        <label title="Measured off the fall butterfly: 18.3% of total wall width per second, ~1.8s per wall.">Speed %/sec</label>
-        <input type="number" id="rigElementRate" value="17.5" min="1" step="0.5">
+        <label title="How tall the element is as a percent of the frame height, identical on all three walls. Nothing used to state this, and one delivered set drew small distant owls on one wall and a single close-up owl filling half the frame on another - from the same prompt and the same reference picture.">Size % of height</label>
+        <input type="number" id="rigElementSize" value="12" min="1" max="90" step="1">
+      </div>
+      <div class="f">
+        <label title="How far down the frame it crosses, as a percent of frame height from the top edge. Identical on all three walls: the audience follows one continuous line across the room, so a bird that crosses high on one wall and low on the next reads as two different flights. One delivered set had exactly that.">Height % from top</label>
+        <input type="number" id="rigElementHeight" value="35" min="1" max="95" step="1">
       </div>
       <div class="f" style="min-width:210px;">
         <label title="Sent to Higgsfield as an extra reference on all three walls, so the thing that crosses is the same object on each - not three different inventions of the same description.">Reference picture</label>
@@ -639,8 +936,15 @@ table.rsr .rsr-n { color: var(--muted-dim); white-space: nowrap; }
     <div class="result" id="genjutsuResult"></div>
   </div>
 
+  <div class="section-head" id="vidRefineHead">
+    <h2><span class="stepno">6</span>Refinement <span class="sub">remove or add one small thing in a finished clip, in place</span> <button class="collapse" data-collapse="vidRefineBody">show</button></h2>
+    <select id="videoEditModelSelect"></select>
+  </div>
+  <div class="statusline" id="vidRefineHint">Clip almost right, but one object needs to go or come in? Describe just that one change and apply it — the result replaces this wall's current clip. The clip before the edit is kept in version history.</div>
+  <div id="vidRefineBody" class="collapsible" style="margin-bottom:30px;"><div class="cols3" id="vidRefineWalls"></div></div>
+
   <div class="section-head" id="calHead">
-    <h2><span class="stepno">6</span>Self-calibration <span class="sub">measures what it made, re-derives its numbers every 10 generations</span> <button class="collapse" data-collapse="calBody">show</button></h2>
+    <h2><span class="stepno">7</span>Self-calibration <span class="sub">measures what it made, re-derives its numbers every 10 generations</span> <button class="collapse" data-collapse="calBody">show</button></h2>
     <label style="display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--muted);">
       <input type="checkbox" id="calEnabled" checked style="width:auto;accent-color:var(--accent);">
       Auto-calibrate
@@ -716,6 +1020,10 @@ let rigRulesCache = { left:'', center:'', right:'' };
 // actually sent for video now; rigRulesCache stays as the prose view.
 let rigRulesJsonCache = { left:null, center:null, right:null };
 let rigState = null;
+// The server's element timetable (rigspec.elementSchedule for all three walls,
+// in journey order). Cached here so the timeline table renders the SAME numbers
+// the prompts carry rather than a second guess at them.
+let elementPlanCache = null;
 
 // A dead server and a failing API call are completely different problems, and
 // until now both surfaced as the browser's bare "Failed to fetch" — which then
@@ -820,6 +1128,7 @@ async function refreshFromState(){
     updateGenerateEnabled(w.id);
     restoreGenState('img', w.id, st.genImageStatus, st.genImageUrl);
   });
+  refreshApproveWaiting();
   WALLS.forEach(w => {
     const st = state.walls[w.id];
     const rp = document.getElementById(`refineprompt-${w.id}`);
@@ -828,10 +1137,16 @@ async function refreshFromState(){
     // generation (see /api/edit-image) — reflect the same outcome here too.
     restoreGenState('refine', w.id, st.genImageStatus, st.genImageUrl);
     updateRefineGenerateEnabled(w.id);
+    // The video Refinement card reflects genVideoUrl/genVideoStatus the same way.
+    const vrp = document.getElementById(`vidrefineprompt-${w.id}`);
+    if (vrp && !vrp.dataset.userEdited) vrp.value = st.videoEditPrompt || '';
+    restoreGenState('vidrefine', w.id, st.genVideoStatus, st.genVideoUrl);
+    refreshVidRefinePreview(w.id);
   });
   if (state.imageModel) document.getElementById('imageModelSelect').value = state.imageModel;
   if (state.videoModel) document.getElementById('videoModelSelect').value = state.videoModel;
   if (state.editModel) document.getElementById('editModelSelect').value = state.editModel;
+  if (state.videoEditModel) document.getElementById('videoEditModelSelect').value = state.videoEditModel;
   // videoMotionMode is still read from state so nothing
   // that depended on them breaks, but the camera rig (see the CAMERA RIG
   // section) is now what actually drives the locked video rules.
@@ -893,6 +1208,25 @@ function renderDropzone(kind, id){
   let src;
   if (kind === 'img') {
     src = wallImageSrc(id);
+    // INHERITED CENTRE SOURCE. Every img generation on a side wall already
+    // sends the CENTRE's picture as its reference - referenceImagePathFor()
+    // returns wallReferencePath('center') for kind 'img' regardless of which
+    // wall is being generated - so the moment a source lands on the centre it
+    // is the source for all three. The two side cards just never showed it,
+    // which made them read as empty and unready when they were neither, and
+    // invited dropping a second copy of the same file onto each one.
+    // Shown dimmed and labelled: it is the centre's picture, not this wall's
+    // own result, and the remove button stays off because there is nothing
+    // here belonging to this wall to remove.
+    if (!src && id !== 'center') {
+      const inherited = wallImageSrc('center');
+      if (inherited) {
+        el.innerHTML = `<img src="${inherited}" class="dz-inherited">`
+          + `<span class="dz-inherit-tag">source from centre</span>`;
+        removeBtn.style.display = 'none';
+        return;
+      }
+    }
     el.innerHTML = src ? `<img src="${src}">` : `<span>Drop an image, or generate one below</span>`;
   } else {
     // 'vid' and 'ref' show the same underlying image (this wall's approved
@@ -901,7 +1235,22 @@ function renderDropzone(kind, id){
     const st = state.walls[id];
     const path = wallReferencePath(id);
     src = st.genImageUrl && st.approvedImagePath ? st.genImageUrl : (path ? `/uploads/${path.split(/[\\/]/).pop()}` : null);
-    const placeholder = kind === 'ref' ? 'Drop the center reference image here' : 'Approve a reference image above, or drop one here';
+    // WAITING ON APPROVAL. Video reads approvedImagePath || uploadedImagePath,
+    // so a generated image that has not been approved is invisible here - and
+    // the card said only "Approve a reference image above". That text is from
+    // when this page was one long scroll; Image and Video are separate tabs
+    // now, so "above" points at a different tab and the picture looked simply
+    // missing. Show it, say what it is waiting for, and put the button that
+    // clears it on this tab (see the Source set card's Approve action).
+    if (!src && kind === 'vid' && st.genImageUrl) {
+      el.innerHTML = `<img src="${st.genImageUrl}" class="dz-inherited">`
+        + `<span class="dz-inherit-tag pending">generated &mdash; not approved yet</span>`;
+      removeBtn.style.display = 'none';
+      return;
+    }
+    const placeholder = kind === 'ref'
+      ? 'Drop the center reference image here'
+      : 'No image for this wall yet. Generate one on the Image tab and approve it, or drop one here.';
     el.innerHTML = src ? `<img src="${src}">` : `<span>${placeholder}</span>`;
   }
   removeBtn.style.display = src ? 'flex' : 'none';
@@ -914,6 +1263,13 @@ function refreshWallImageDisplays(id){
   renderDropzone('vid', id);
   renderDropzone('ref', id);
   refreshRefinePreview(id);
+  // The centre's picture is also what the two side image cards display as
+  // their inherited source (see renderDropzone), so changing the centre has
+  // to repaint them - otherwise the new source appears on the centre card
+  // and the sides keep showing the old one until a full reload.
+  if (id === 'center') {
+    ['left', 'right'].forEach(w => renderDropzone('img', w));
+  }
 }
 
 // Read-only preview on the Refine card — same underlying image as the img
@@ -1012,6 +1368,57 @@ function buildWallCard(kind, w){
       </div>
     </div>
   `;
+}
+
+// The video Refinement card: the image one's layout, acting on this wall's
+// finished clip (genVideoUrl) instead of its still. No Approve - a clip has no
+// approval step; the edit replaces the wall's clip directly, and the one it
+// replaced is snapshotted into version history first (see /api/edit-video).
+function buildVidRefineCard(w){
+  return `
+    <div class="wallcard${w.id === 'center' ? ' center' : ''}">
+      <div class="wallcard-head"><span class="name">${w.label}</span><span class="angle">${w.angle}</span></div>
+      <div class="wallcard-body">
+        <div class="dropzone" id="vidrefinepreview-${w.id}" style="cursor:default;">
+          <div class="dz-content" id="vidrefinepreviewcontent-${w.id}"><span>Generate this wall's video above first</span></div>
+        </div>
+        <div class="prompt-tag">🔒 Fixed rule <span>— locked; change only by asking Claude</span></div>
+        <pre class="fixed-rules" id="vidrefinefixed-${w.id}"></pre>
+        <div class="prompt-tag">What to change <span>— the one thing to remove or add, fully editable</span></div>
+        <textarea class="wallprompt" id="vidrefineprompt-${w.id}" placeholder="e.g. 'Remove the red sled leaning against the fence' — leave blank and click Improve to have Claude suggest one small change."></textarea>
+        <div class="fields" id="vidrefinefields-${w.id}"></div>
+        <div class="actions">
+          <button class="btn ghost small" id="vidrefineimprove-${w.id}" title="Claude reads a frame of this wall's current clip and tightens the one-change edit instruction.">Tighten edit instruction</button>
+          <button class="btn small" id="vidrefinegen-${w.id}" disabled>Apply edit</button>
+        </div>
+        <div class="ratingrow">
+          <span class="pill idle" id="vidrefinepill-${w.id}">idle</span>
+          <span class="rate" id="vidrefinerate-${w.id}">
+            <button class="ratebtn" data-rate="up" data-rwall="${w.id}" data-rkind="vidrefine">&#9650; Like</button>
+            <button class="ratebtn" data-rate="down" data-rwall="${w.id}" data-rkind="vidrefine">&#9660; Unlike</button>
+          </span>
+        </div>
+        <div class="statusline" id="vidrefinestatus-${w.id}"></div>
+      </div>
+    </div>
+  `;
+}
+
+function refreshVidRefinePreview(id){
+  const el = document.getElementById(`vidrefinepreviewcontent-${id}`);
+  if (!el) return;
+  const url = state && state.walls[id] && state.walls[id].genVideoUrl;
+  el.innerHTML = url ? `<video controls muted preload="metadata" src="${url}"></video>` : `<span>Generate this wall's video above first</span>`;
+  updateVidRefineGenerateEnabled(id);
+}
+
+// Same rule as Apply edit on the image card: needs a clip AND an instruction.
+function updateVidRefineGenerateEnabled(id){
+  const btn = document.getElementById(`vidrefinegen-${id}`);
+  if (!btn) return;
+  const hasClip = !!(state && state.walls[id] && state.walls[id].genVideoUrl);
+  const hasText = (document.getElementById(`vidrefineprompt-${id}`)?.value || '').trim().length > 0;
+  btn.disabled = !(hasClip && hasText);
 }
 
 // The "Refine image" card is intentionally simpler than buildWallCard: no
@@ -1351,11 +1758,23 @@ function fullEditPrompt(editableText){
   return extra ? `${fixed}\n\n${extra}` : fixed;
 }
 
+// The video counterpart. It keeps the clip's MOTION as well as its content,
+// and says so in picture words (README section 4): the picture must keep
+// travelling and changing size exactly as it already does. An edit that
+// re-times the move breaks the set it has to cut together with.
+const VIDEO_EDIT_LOCK_NOTE = 'This is a small, targeted edit to an existing video clip — not a new clip and not a restyle. Change ONLY what the instruction below describes, and keep that change consistent on every frame. Leave everything else exactly as it already is: the same framing on every frame, the same length and timing, and the picture travels and changes size exactly as it already does, at the same pace from the first frame to the last. Keep the lighting, color palette, time of day, and every object not explicitly mentioned. Do not regenerate, restyle, or reinterpret the rest of the clip.';
+function fullVideoEditPrompt(editableText){
+  const extra = (editableText || '').trim();
+  return extra ? `${VIDEO_EDIT_LOCK_NOTE}\n\n${extra}` : VIDEO_EDIT_LOCK_NOTE;
+}
+
 document.getElementById('imageWalls').innerHTML = IMAGE_WALLS.map(w => buildWallCard('img', w)).join('');
 document.getElementById('videoWalls').innerHTML = WALLS.map(w => buildWallCard('vid', w)).join('');
 document.getElementById('refineWalls').innerHTML = WALLS.map(w => buildRefineCard(w)).join('');
+document.getElementById('vidRefineWalls').innerHTML = WALLS.map(w => buildVidRefineCard(w)).join('');
 // Refine's fixed rule is static — set once here, not in refreshFromState.
 WALLS.forEach(w => { document.getElementById(`refinefixed-${w.id}`).textContent = buildFixedEditRules(); });
+WALLS.forEach(w => { document.getElementById(`vidrefinefixed-${w.id}`).textContent = VIDEO_EDIT_LOCK_NOTE; });
 // Image and video fixed rules DO depend on imageCompositionMode/
 // videoMotionMode, which aren't known until refreshFromState() reads them
 // back from the server — this initial render uses the defaults ('distinct'/
@@ -1422,7 +1841,7 @@ function resyncLinkedFields(kind){
 document.addEventListener('change', (e) => {
   const id = e.target && e.target.id;
   if (!id) return;
-  const m = /^(img|vid|refine)field-(left|center|right)-(.+)$/.exec(id);
+  const m = /^(img|vid|refine|vidrefine)field-(left|center|right)-(.+)$/.exec(id);
   if (!m || !settingsLinked(m[1])) return;
   syncSharedParam(m[1], m[3], fieldValueOf(e.target));
 });
@@ -1479,10 +1898,29 @@ function setPill(kind, id, status){
   pill.textContent = status;
 }
 
+// WHICH SHAPE A WALL IS GENERATED AT.
+//   '16:9'  - every wall generates 16:9, per explicit request.
+//   'wall'  - each wall generates at its own true shape from theatre.js
+//             (sides 3840x1600 = 2.40, centre 3840x1920 = 2.00).
+// These disagree, and the disagreement is real rather than cosmetic: no wall
+// in this room IS 16:9, so a 16:9 frame has to be cropped or stretched to fit
+// one, and theatre.js carries a written note that forcing 16:9 on every wall
+// was previously found to be wrong for exactly that reason. It is one word to
+// switch back, and nothing else needs to change.
+const DEFAULT_ASPECT = '16:9';
+
+// Never shown, on any panel, per the owner. is_inpaint and remove_bg are
+// refinement operations and do not belong in first-stage generation; width
+// and height duplicate aspect_ratio + resolution (every catalogue model that
+// has them also has both of those - checked). Not rendered means not sent:
+// readFields only reads fields that exist on the page.
+const HIDDEN_PARAMS = new Set(['is_inpaint', 'remove_bg', 'width', 'height']);
+
 async function renderFieldsFor(kind, id, jst){
   const schema = await loadModelSchema(jst);
   const container = document.getElementById(`${kind}fields-${id}`);
-  const fields = (schema.params || []).filter(p => p.name !== 'prompt' && !isMediaParam(p));
+  const fields = (schema.params || []).filter(p => p.name !== 'prompt' && !isMediaParam(p)
+                                               && !HIDDEN_PARAMS.has(p.name));
   container.innerHTML = fields.map(p => {
     // Image models default aspect_ratio to something like 1:1 or "auto" —
     // fine for a standalone image, wrong for a wall in a 16:9 video
@@ -1493,16 +1931,19 @@ async function renderFieldsFor(kind, id, jst){
     // Same reasoning applies to 'refine' — an edit should keep the wall's
     // image at the video wall's 16:9 frame, not let the edit model reset it
     // to its own square/portrait default.
-    // Per-wall aspect, from the room ledger. Forcing 16:9 (1.78) on every wall
-    // was wrong for all of them: the side walls are 3520x1600 = 2.20 and the
-    // centre is 3840x1920 = 2.00, so every frame was composed to the wrong
-    // shape and then squeezed onto the wall. Pick whatever the model offers
-    // that is closest to this wall's real aspect.
-    if ((kind === 'img' || kind === 'refine' || kind === 'vid') && p.name === 'aspect_ratio' && Array.isArray(p.enum)) {
-      const want = (window.__theatre && window.__theatre.pickAspect)
-        ? window.__theatre.pickAspect(id, p.enum) : null;
-      const pick = (want && p.enum.includes(want)) ? want
-        : (p.enum.includes('16:9') ? '16:9' : p.default);
+    // 16:9 on every wall, by the owner's explicit choice. This replaced a
+    // per-wall pick from the room ledger (pickAspect: sides 3520x1600 = 2.20,
+    // centre 3840x1920 = 2.00, so usually 21:9) - pickAspect still exists if
+    // that is ever wanted back. It is only the default; each wall's dropdown
+    // can still be changed.
+    if (p.name === 'aspect_ratio' && Array.isArray(p.enum) && p.enum.includes('16:9')) {
+      p = { ...p, default: '16:9' };
+    }
+    // Resolution defaults: 1k where a model offers it (the image models -
+    // gpt_image_2, seedream_v5_pro, nano_banana_pro), otherwise 720p (the video
+    // models - seedance, Genjutsu). A model offering neither keeps its own.
+    if (p.name === 'resolution' && Array.isArray(p.enum)) {
+      const pick = p.enum.includes('1k') ? '1k' : p.enum.includes('720p') ? '720p' : null;
       if (pick) p = { ...p, default: pick };
     }
     return fieldControlHtml(`${kind}field-${id}`, p);
@@ -1510,12 +1951,13 @@ async function renderFieldsFor(kind, id, jst){
 }
 
 async function renderAllFields(kind){
-  const selectId = kind === 'img' ? 'imageModelSelect' : kind === 'vid' ? 'videoModelSelect' : 'editModelSelect';
+  const selectId = kind === 'img' ? 'imageModelSelect' : kind === 'vid' ? 'videoModelSelect'
+                 : kind === 'vidrefine' ? 'videoEditModelSelect' : 'editModelSelect';
   const jst = document.getElementById(selectId).value;
   const walls = kind === 'vid' ? WALLS : IMAGE_WALLS; // 'img' and 'refine' both apply to all three walls (IMAGE_WALLS === WALLS)
   await Promise.all(walls.map(w => renderFieldsFor(kind, w.id, jst)));
-  // Freshly built fields carry the model's own per-wall defaults (which can
-  // legitimately differ - see the per-wall aspect_ratio pick above). Linked,
+  // Freshly built fields carry the model's own defaults (the same on every
+  // wall today, but nothing guarantees a model keeps it that way). Linked,
   // take the left wall's value as the set's value so the three start in
   // agreement rather than drifting until someone notices; unlinked, each
   // wall keeps its own freshly-built default.
@@ -1681,10 +2123,394 @@ function wireStats(){
 //   LIBRARY    every finished generation, streamed from Higgsfield
 //   PLAYER     watch clips side by side - library picks or local files, own transport
 //   STATISTICS what the tool has learned, and the export to hand to a teammate
+
+
+// ================= THE CONSOLE =================
+// Long-form explanation used to live permanently next to the controls it
+// described. It is all still here - it just stopped occupying the screen.
+// logNote() with a key REPLACES that key's entry instead of appending, which
+// matters because the rig readout re-renders on every preset/speed change and
+// would otherwise bury everything else within a minute.
+const CONSOLE_MARKUP = `
+  <div class="uiconsole collapsed" id="uiconsole">
+    <button class="uiconsole-tab" id="uiconsoleToggle" type="button"
+      title="The explanatory notes and status this page used to print inline. Nothing here is lost - it is just out of the way.">
+      <span>Console</span><span class="uiconsole-count" id="uiconsoleCount">0</span>
+    </button>
+    <div class="uiconsole-body">
+      <div class="uiconsole-head">
+        <strong>Console</strong>
+        <span class="sub">the notes and status this page used to print beside every control</span>
+        <button class="btn ghost small" id="uiconsoleClear" type="button">Clear</button>
+      </div>
+      <div class="uiconsole-list" id="uiconsoleList">
+        <div class="uiconsole-empty">Nothing logged yet.</div>
+      </div>
+    </div>
+  </div>`;
+
+const consoleKeyed = new Map();
+
+function logNote(source, html, key){
+  const list = document.getElementById('uiconsoleList');
+  if (!list) return;
+  const empty = list.querySelector('.uiconsole-empty');
+  if (empty) empty.remove();
+  const stamp = new Date().toLocaleTimeString();
+  let el = key ? consoleKeyed.get(key) : null;
+  if (el && el.isConnected) {
+    el.querySelector('.uic-when').textContent = stamp;
+    el.querySelector('.uic-body').innerHTML = html;
+  } else {
+    el = document.createElement('div');
+    el.className = 'uic-entry';
+    el.innerHTML = `<div class="uic-meta"><span class="uic-src"></span><span class="uic-when"></span></div>`
+                 + `<div class="uic-body"></div>`;
+    el.querySelector('.uic-src').textContent = source;
+    el.querySelector('.uic-when').textContent = stamp;
+    el.querySelector('.uic-body').innerHTML = html;
+    if (key) consoleKeyed.set(key, el);
+  }
+  list.prepend(el);
+  const c = document.getElementById('uiconsoleCount');
+  if (c) c.textContent = String(list.querySelectorAll('.uic-entry').length);
+}
+
+function openConsole(){
+  const box = document.getElementById('uiconsole');
+  if (box) box.classList.remove('collapsed');
+}
+
+function wireConsole(){
+  document.body.insertAdjacentHTML('beforeend', CONSOLE_MARKUP);
+  document.getElementById('uiconsoleToggle').addEventListener('click', () => {
+    document.getElementById('uiconsole').classList.toggle('collapsed');
+  });
+  document.getElementById('uiconsoleClear').addEventListener('click', () => {
+    consoleKeyed.clear();
+    const list = document.getElementById('uiconsoleList');
+    list.innerHTML = '<div class="uiconsole-empty">Nothing logged yet.</div>';
+    document.getElementById('uiconsoleCount').textContent = '0';
+  });
+  // Any control can hand its paragraph to the console with one attribute.
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-why]');
+    if (!b) return;
+    const note = WHY_NOTES[b.dataset.why];
+    if (!note) return;
+    logNote(note.source, note.html, 'why:' + b.dataset.why);
+    openConsole();
+  });
+}
+
+// The paragraphs that used to be printed permanently on the page. Kept
+// verbatim - the point of moving them was the screen space, not the content.
+const WHY_NOTES = {
+  about: { source: 'Tri-Wall', html:
+    '<strong>One camera rig, three synchronized views.</strong> State what the physical camera does '
+    + 'once &mdash; the locked rules for all three walls are derived from it, coupled and '
+    + 'mirror-symmetric, so a push-in reads as one continuous move across the whole wall instead of '
+    + 'three walls each pushing in separately.<br><br>'
+    + 'Scene &amp; prompts sync from the <code>/tri-wall</code> conversation &mdash; click '
+    + '"Sync from chat" after asking Claude to draft.' },
+  signin: { source: 'Login', html:
+    'Sign-in is handled entirely by each vendor\'s own CLI in its own browser flow. This tool never '
+    + 'asks for, stores or transmits a password, API key or token &mdash; there is no field here that '
+    + 'takes one. Your session lives in your own home directory and your credits are billed to your '
+    + 'own account.' },
+};
+
+// ================= THE IMAGE SETS SHELF =================
+// Several image sets accumulate in the time one clip takes to render, so the
+// Image tab needs somewhere to put the finished ones. A set is the three wall
+// pictures plus the text that made them; the server holds them (see
+// archiveLiveSet) and nothing is destroyed by starting the next look.
+const SETS_MARKUP = `
+  <div class="card" id="setsCard" style="margin:0 0 12px;">
+    <h2>Image sets <span class="sub">every trio you have built; the live one is on the walls below</span></h2>
+    <p style="margin:0 0 10px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.6;">
+      Video is the slow step. Start the next look while one renders &mdash; a new centre reference no longer
+      throws the last trio away, it files it here. Pictures are never deleted from <code>uploads/</code>,
+      so a set keeps working for as long as that folder does.
+    </p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <button class="btn small" id="setSaveBtn" title="Store the three walls as they stand. Pressing this twice updates the same set rather than making a copy.">Save this set</button>
+      <button class="btn ghost small" id="setNewBtn" title="Clear the walls and begin a new trio. The current one is filed here first.">Start a new set</button>
+      <span class="statusline" id="setsStatus" style="margin:0;"></span>
+    </div>
+    <div id="setsList"></div>
+  </div>`;
+
+// A compact strip at the top of the Video tab: which trio the walls are
+// carrying, and a way to swap without leaving the tab. Video renders from
+// whatever is on the walls (wallReferencePath), so "which set is loaded" is
+// the single fact that decides what a clip will be made of.
+const VIDEO_SET_MARKUP = `
+  <div class="card" id="videoSetCard" style="margin:0 0 12px;">
+    <h2>Source set <span class="sub">the trio these clips will be generated from</span></h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <select id="videoSetPick" style="max-width:340px;"></select>
+      <button class="btn ghost small" id="videoSetLoadBtn">Put it on the walls</button>
+      <button class="btn small" id="approveWaitingBtn" style="display:none;"></button>
+      <span class="statusline" id="videoSetStatus" style="margin:0;"></span>
+    </div>
+    <div id="videoSetPreview"></div>
+  </div>`;
+
+let imageSets = [], liveSetId = null;
+
+function setThumbFor(wall){
+  if (!wall) return null;
+  if (wall.genImageUrl) return wall.genImageUrl;
+  const pth = wall.approvedImagePath || wall.uploadedImagePath;
+  return pth ? '/uploads/' + String(pth).split(/[\\/]/).pop() : null;
+}
+
+function setWallCount(set){
+  return ['left','center','right'].filter(w => setThumbFor((set.walls || {})[w])).length;
+}
+
+function renderSets(){
+  const list = document.getElementById('setsList');
+  if (!list) return;
+  if (!imageSets.length) {
+    list.innerHTML = '<p class="sub" style="margin:0;">Nothing on the shelf yet. Build a trio below and press '
+      + '<strong>Save this set</strong> &mdash; or just start the next look, and this one gets filed automatically.</p>';
+  } else {
+    list.innerHTML = '<div class="setgrid">' + imageSets.map(set => {
+      const live = set.id === liveSetId;
+      const thumbs = ['left','center','right'].map(w => {
+        const src = setThumbFor((set.walls || {})[w]);
+        return src ? `<img src="${src}" alt="${w} wall">` : `<span class="setempty">${w[0].toUpperCase()}</span>`;
+      }).join('');
+      const when = new Date(set.updatedAt || set.createdAt).toLocaleString();
+      return `<div class="setitem${live ? ' live' : ''}">
+        <div class="setthumbs">${thumbs}</div>
+        <div class="setmeta">
+          <input class="setname" data-setid="${set.id}" value="${String(set.name || '').replace(/"/g, '&quot;')}"
+                 title="Rename this set">
+          <div class="setsub">${setWallCount(set)} of 3 walls &middot; ${when}${live ? ' &middot; <strong>on the walls now</strong>' : ''}</div>
+          <div class="setacts">
+            <button class="btn ghost small" data-setload="${set.id}"${live ? ' disabled' : ''}>${live ? 'Loaded' : 'Load'}</button>
+            <button class="btn ghost small" data-setdel="${set.id}" title="Removes the grouping and its text. The pictures stay in uploads/.">Delete</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('') + '</div>';
+  }
+  // Keep the Video tab's picker in step with the shelf.
+  const pick = document.getElementById('videoSetPick');
+  if (pick) {
+    pick.innerHTML = imageSets.length
+      ? imageSets.map(x => `<option value="${x.id}"${x.id === liveSetId ? ' selected' : ''}>`
+          + `${String(x.name || '')} - ${setWallCount(x)}/3 walls${x.id === liveSetId ? ' (on the walls now)' : ''}</option>`).join('')
+      : '<option value="">No saved sets yet</option>';
+    const btn = document.getElementById('videoSetLoadBtn');
+    if (btn) btn.disabled = !imageSets.length;
+    const st = document.getElementById('videoSetStatus');
+    if (st && !st.textContent) st.textContent = imageSets.some(x => x.id === liveSetId)
+      ? '' : 'The walls are carrying an unsaved trio.';
+  }
+  refreshApproveWaiting();
+  renderVideoSetPreview();
+}
+
+// Walls holding a generated image nobody has accepted yet. These are the
+// walls whose video card looks empty, so the count belongs on the Video tab
+// rather than only on the Image tab where the per-wall Approve buttons are.
+function wallsAwaitingApproval(){
+  if (!state || !state.walls) return [];
+  return WALLS.filter(w => {
+    const st = state.walls[w.id];
+    return st && st.genImageUrl && !st.approvedImagePath;
+  }).map(w => w.id);
+}
+
+function refreshApproveWaiting(){
+  const btn = document.getElementById('approveWaitingBtn');
+  if (!btn) return;
+  const waiting = wallsAwaitingApproval();
+  btn.style.display = waiting.length ? 'inline-block' : 'none';
+  btn.textContent = waiting.length === 1
+    ? `Approve the ${waiting[0]} wall's image`
+    : `Approve ${waiting.length} waiting images`;
+  btn.title = 'These walls have a generated image that has never been approved, so video '
+    + 'cannot see it yet. This approves them all and they become the reference frames for the clips.';
+}
+
+async function approveWaitingImages(btn){
+  const waiting = wallsAwaitingApproval();
+  const st = document.getElementById('videoSetStatus');
+  if (!waiting.length) return;
+  btn.disabled = true;
+  if (st) { st.className = 'statusline'; st.textContent = 'Approving\u2026'; }
+  const failed = [];
+  for (const id of waiting) {
+    try {
+      await api('/api/approve', { method:'POST', headers:{'Content-Type':'application/json'},
+                                  body: JSON.stringify({ wall: id }) });
+    } catch (e) { failed.push(`${id}: ${e.message}`); }
+  }
+  state = await api('/api/state');
+  WALLS.forEach(w => refreshWallImageDisplays(w.id));
+  refreshApproveWaiting();
+  btn.disabled = false;
+  if (st) {
+    if (failed.length) {
+      st.className = 'statusline';
+      st.innerHTML = `<span class="error-text">${failed.join('; ')}</span>`;
+    } else {
+      st.className = 'statusline ok';
+      st.textContent = `Approved ${waiting.length === 1 ? 'it' : 'all ' + waiting.length}. `
+        + 'These are now the reference frames for the clips below.';
+    }
+  }
+}
+
+// WHAT IS ABOUT TO GO ON THE WALLS. Picking a set by name alone asks the
+// operator to remember which trio "Set 3" was; these are pictures, and the
+// whole decision is visual. Shows the selected set's left/centre/right exactly
+// as they will land in the video cards below, so "Put it on the walls" is
+// never a guess. Walls the set does not carry are drawn as gaps rather than
+// omitted - an incomplete set should look incomplete.
+function renderVideoSetPreview(){
+  const host = document.getElementById('videoSetPreview');
+  const pick = document.getElementById('videoSetPick');
+  if (!host || !pick) return;
+  const set = imageSets.find(x => x.id === pick.value);
+  if (!set) { host.innerHTML = ''; return; }
+  const live = set.id === liveSetId;
+  const cells = WALLS.map(w => {
+    const src = setThumbFor((set.walls || {})[w.id]);
+    return `<div class="vsp-cell">
+      <div class="vsp-label">${w.label}</div>
+      ${src ? `<img src="${src}" alt="${w.label}">`
+            : '<div class="vsp-gap">no image in this set</div>'}
+    </div>`;
+  }).join('');
+  const n = setWallCount(set);
+  host.innerHTML = `<div class="vsp">
+      <div class="vsp-head">${set.name} &middot; ${n} of 3 walls`
+    + (live ? ' &middot; <strong>already on the walls</strong>'
+            : ' &middot; press &ldquo;Put it on the walls&rdquo; to use it')
+    + (n < 3 ? ' &middot; <span class="vsp-warn">a wall with no image cannot be generated</span>' : '')
+    + `</div><div class="vsp-row">${cells}</div></div>`;
+}
+
+async function refreshSets(){
+  try {
+    const r = await api('/api/image-sets');
+    imageSets = r.sets || [];
+    liveSetId = r.liveSetId || null;
+  } catch (e) { imageSets = []; liveSetId = null; }
+  renderSets();
+}
+
+function setsSay(msg, bad){
+  const el = document.getElementById('setsStatus');
+  if (!el) return;
+  el.className = 'statusline' + (bad ? '' : ' ok');
+  el.innerHTML = bad ? `<span class="error-text">${msg}</span>` : msg;
+}
+
+async function wireSets(){
+  document.getElementById('setSaveBtn').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await api('/api/image-set-save', { method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+      await refreshSets();
+      setsSay(`Saved as <strong>${r.set.name}</strong>.`);
+    } catch (err) { setsSay(err.message, true); }
+    finally { e.target.disabled = false; }
+  });
+
+  document.getElementById('setNewBtn').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await api('/api/image-set-new', { method:'POST' });
+      try { sessionStorage.setItem('triwall_notice', r.archivedSet
+        ? `Started a new set. The previous trio was filed as "${r.archivedSet.name}".`
+        : 'Started a new set.'); } catch (x) {}
+      location.reload();
+    } catch (err) { setsSay(err.message, true); e.target.disabled = false; }
+  });
+
+  document.getElementById('setsList').addEventListener('click', async (e) => {
+    const load = e.target.closest('[data-setload]');
+    const del  = e.target.closest('[data-setdel]');
+    if (load) {
+      try {
+        await api('/api/image-set-load', { method:'POST',
+          headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: load.dataset.setload }) });
+        try { sessionStorage.setItem('triwall_notice', 'Set loaded onto the walls.'); } catch (x) {}
+        location.reload();
+      } catch (err) { setsSay(err.message, true); }
+    } else if (del) {
+      const set = imageSets.find(x => x.id === del.dataset.setdel);
+      openModal('Remove this set?', (body) => {
+        const q = document.createElement('p');
+        q.innerHTML = `<b>${set ? set.name : 'This set'}</b> leaves the shelf. `
+          + `Its pictures stay in <code>uploads/</code> &mdash; what goes is the grouping and the descriptions.`;
+        body.appendChild(q);
+      }, [
+        { label: 'Remove it', onClick: async () => {
+            closeModal();
+            try {
+              await api('/api/image-set-delete', { method:'POST',
+                headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: del.dataset.setdel }) });
+              await refreshSets();
+              setsSay('Removed.');
+            } catch (err) { setsSay(err.message, true); }
+          } },
+        { spacer: true },
+        { label: 'Keep it', cls: 'btn ghost', onClick: () => closeModal() },
+      ]);
+    }
+  });
+
+  document.getElementById('setsList').addEventListener('change', async (e) => {
+    const name = e.target.closest('.setname');
+    if (!name) return;
+    try {
+      await api('/api/image-set-rename', { method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ id: name.dataset.setid, name: name.value }) });
+      await refreshSets();
+    } catch (err) { setsSay(err.message, true); }
+  });
+
+  const vpick = document.getElementById('videoSetPick');
+  if (vpick) vpick.addEventListener('change', renderVideoSetPreview);
+
+  const awb = document.getElementById('approveWaitingBtn');
+  if (awb) awb.addEventListener('click', () => approveWaitingImages(awb).catch(e => console.error(e)));
+
+  const vload = document.getElementById('videoSetLoadBtn');
+  if (vload) vload.addEventListener('click', async (e) => {
+    const id = document.getElementById('videoSetPick').value;
+    if (!id) return;
+    e.target.disabled = true;
+    try {
+      await api('/api/image-set-load', { method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      try { sessionStorage.setItem('triwall_tab', 'video');
+            sessionStorage.setItem('triwall_notice', 'Set loaded onto the walls.'); } catch (x) {}
+      location.reload();
+    } catch (err) {
+      const st = document.getElementById('videoSetStatus');
+      if (st) st.innerHTML = `<span class="error-text">${err.message}</span>`;
+      e.target.disabled = false;
+    }
+  });
+
+  await refreshSets();
+}
+
 const TAB_LAYOUT = [
   { id:'login', label:'Login',      anchors:['connHead'] },
   { id:'image', label:'Image',      anchors:['sceneRow','imgHead','refineHead'] },
-  { id:'video', label:'Video',      anchors:['videoModelRow','vidHead','genjutsuHead'] },
+  { id:'video', label:'Video',      anchors:['videoModelRow','vidHead','genjutsuHead','vidRefineHead'] },
   { id:'library', label:'Library',    anchors:[] },
   { id:'player',  label:'Player',     anchors:[] },
   { id:'stats',   label:'Statistics', anchors:['calHead'] },
@@ -1803,27 +2629,38 @@ document.addEventListener('click', async (e) => {
 // existing streamed URL, and reloading the page clears the set - there is
 // nothing here worth surviving a refresh, and nothing is uploaded or
 // generated by adding a clip to it.
+//
+// One fixed box per wall (left/center/right) rather than an ordered list -
+// the tool's own output is always one clip per wall, so the slot a clip goes
+// into should say which wall it stands in for, not just "3rd thing added".
+function playerSlotCard(w){
+  return '<div class="wallcard' + (w.id === 'center' ? ' center' : '') + '">'
+    + '<div class="wallcard-head"><span class="name">' + esc(w.label) + '</span>'
+    + '<span class="angle">' + esc(w.angle) + '</span></div>'
+    + '<div class="wallcard-body">'
+    + '<div id="playerSlot-' + w.id + '"></div>'
+    + '<div class="rigbar" style="margin:0;">'
+    + '<div class="f"><label>From library</label>'
+    + '<select id="playerLibPick-' + w.id + '" style="min-width:170px;"><option value="">choose a generated clip…</option></select></div>'
+    + '<div class="f"><label>&nbsp;</label><button class="btn ghost small" data-player-libadd="' + w.id + '">Add</button></div>'
+    + '</div>'
+    + '<button class="btn ghost small" data-player-filepick="' + w.id + '" style="align-self:flex-start;">Upload file from this computer…</button>'
+    + '<input type="file" id="playerFileInput-' + w.id + '" accept="video/*" style="display:none;">'
+    + '</div></div>';
+}
+
 const PLAYER_MARKUP = `
   <div class="card" style="margin:0 0 12px;">
-    <h2>Player <span class="sub">watch clips side by side, from the library or from this computer</span></h2>
-    <p style="margin:0 0 10px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.6;">
+    <h2>Player <span class="sub">watch left, center and right clips side by side, from the library or from this computer</span></h2>
+    <p style="margin:0 0 14px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.6;">
       Nothing added here is uploaded or generated — a library pick streams from Higgsfield exactly like
       the Library tab, and a file from this computer plays straight from your disk. Closing or reloading
-      the page clears this list; it is a scratch space, not a saved one.
+      the page clears these three slots; it is a scratch space, not a saved one.
     </p>
-    <div class="rigbar" style="margin:0 0 10px;">
-      <div class="f"><label>Add from library</label>
-        <select id="playerLibPick" style="min-width:260px;"><option value="">choose a generated clip…</option></select></div>
-      <div class="f"><label>&nbsp;</label><button class="btn ghost small" id="playerLibAddBtn">Add</button></div>
-      <div class="f"><label>&nbsp;</label>
-        <button class="btn ghost small" id="playerFilePickBtn">Add file(s) from this computer…</button>
-        <input type="file" id="playerFileInput" accept="video/*" multiple style="display:none;"></div>
-      <div class="f"><label>&nbsp;</label><span id="playerCount" style="font-family:var(--mono);font-size:11px;color:var(--muted-dim);align-self:center;"></span></div>
+    <div class="cols3" style="margin-bottom:14px;">
+      ${WALLS.map(playerSlotCard).join('')}
     </div>
-    <label class="dropzone" id="playerDropzone" style="aspect-ratio:auto;height:64px;margin-bottom:14px;">
-      <div class="dz-content"><span>…or drag video files here</span></div>
-    </label>
-    <div class="card" style="margin:0 0 14px;background:var(--surface-2);">
+    <div class="card" style="margin:0;background:var(--surface-2);">
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn small" id="playerPlayAllBtn" title="Start every loaded clip from zero at the same moment">Play all together</button>
         <button class="btn ghost small" id="playerPauseAllBtn">Pause all</button>
@@ -1834,79 +2671,121 @@ const PLAYER_MARKUP = `
         <button class="btn ghost small" id="playerClearBtn">Clear all</button>
         <span class="statusline" id="playerTransportStatus" style="margin:0;"></span>
       </div>
+      <div class="statusline" id="playerTimingStatus" style="margin:6px 0 0;"></div>
     </div>
-    <div id="playerGrid" class="libgrid"></div>
   </div>`;
 
-let playerItems = [];   // { id, label, url, isLocal }
-let playerSeq = 0;
+let playerSlots = { left:null, center:null, right:null };   // wall id -> { label, url, isLocal } | null
 
-function renderPlayerGrid(){
-  const grid = document.getElementById('playerGrid');
-  if (!grid) return;
-  const countEl = document.getElementById('playerCount');
-  if (countEl) countEl.textContent = playerItems.length + (playerItems.length === 1 ? ' clip loaded' : ' clips loaded');
-  if (!playerItems.length) {
-    grid.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--muted-dim);">'
-      + 'Nothing loaded yet — add a clip from the library or from this computer above.</span>';
+function renderPlayerSlot(wallId){
+  const host = document.getElementById('playerSlot-' + wallId);
+  if (!host) return;
+  const it = playerSlots[wallId];
+  if (!it) {
+    host.innerHTML = '<label class="dropzone" data-player-dz="' + wallId + '">'
+      + '<div class="dz-content"><span>drop a video file here for the ' + wallId + ' wall</span></div></label>';
+    wirePlayerDropzone(wallId);
     return;
   }
-  grid.innerHTML = playerItems.map(it => '<div class="playertile">'
+  host.innerHTML = '<div class="playertile">'
     + '<video src="' + it.url + '" controls preload="metadata" playsinline></video>'
     + '<div class="meta"><span>' + esc(it.label) + '</span>'
-    + '<button class="btn ghost small" data-player-remove="' + it.id + '" style="padding:1px 6px;">remove</button>'
-    + '</div></div>').join('');
+    + '<button class="btn ghost small" data-player-remove="' + wallId + '" style="padding:1px 6px;">remove</button>'
+    + '</div></div>';
+  host.querySelector('video').addEventListener('loadedmetadata', checkPlayerTiming);
+}
+
+function renderPlayerGrid(){
+  WALLS.forEach(w => renderPlayerSlot(w.id));
+  checkPlayerTiming();
 }
 
 function playerVideoEls(){
-  return [...document.querySelectorAll('#playerGrid video')];
+  return WALLS.map(w => document.querySelector('#playerSlot-' + w.id + ' video')).filter(Boolean);
 }
 
-function addPlayerItem(label, url, isLocal){
-  playerItems.push({ id: ++playerSeq, label, url, isLocal });
-  renderPlayerGrid();
+// Flags a length mismatch as soon as it is knowable (metadata loaded for at
+// least two clips), not only after Play all is pressed — mismatched clips
+// drift apart on a loop, so the sooner this shows the sooner it can be fixed.
+function checkPlayerTiming(){
+  const st = document.getElementById('playerTimingStatus');
+  if (!st) return;
+  const durs = playerVideoEls()
+    .map(v => v.duration)
+    .filter(d => Number.isFinite(d) && d > 0);
+  if (durs.length < 2) { st.textContent = ''; return; }
+  const spread = Math.max(...durs) - Math.min(...durs);
+  if (spread > 0.15) {
+    st.innerHTML = '<span class="error-text">Clip lengths differ by ' + spread.toFixed(2)
+      + 's — they will drift out of sync on a loop.</span>';
+  } else {
+    st.textContent = '';
+  }
 }
 
-function removePlayerItem(id){
-  const idx = playerItems.findIndex(it => it.id === id);
-  if (idx === -1) return;
-  const [it] = playerItems.splice(idx, 1);
+function setPlayerSlot(wallId, label, url, isLocal){
+  const prev = playerSlots[wallId];
+  if (prev && prev.isLocal) { try { URL.revokeObjectURL(prev.url); } catch (e) {} }
+  playerSlots[wallId] = { label, url, isLocal };
+  renderPlayerSlot(wallId);
+  checkPlayerTiming();
+}
+
+function removePlayerSlot(wallId){
+  const it = playerSlots[wallId];
+  if (!it) return;
   // Local files only ever exist as a blob: URL for the life of this page: not
   // revoking it on removal would keep the underlying file data pinned in
   // memory for as long as the tab stays open.
   if (it.isLocal) { try { URL.revokeObjectURL(it.url); } catch (e) {} }
-  renderPlayerGrid();
+  playerSlots[wallId] = null;
+  renderPlayerSlot(wallId);
+  checkPlayerTiming();
 }
 
 function clearPlayerItems(){
-  playerItems.forEach(it => { if (it.isLocal) { try { URL.revokeObjectURL(it.url); } catch (e) {} } });
-  playerItems = [];
-  renderPlayerGrid();
+  WALLS.forEach(w => removePlayerSlot(w.id));
 }
 
-function addLocalFilesToPlayer(files){
-  [...files]
-    .filter(f => /^video\//.test(f.type) || /\.(mp4|mov|webm|m4v)$/i.test(f.name))
-    .forEach(f => addPlayerItem(f.name, URL.createObjectURL(f), true));
+function addLocalFileToPlayer(wallId, file){
+  const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|webm|m4v)$/i.test(file.name);
+  if (!isVideo) {
+    const st = document.getElementById('playerTransportStatus');
+    if (st) st.innerHTML = '<span class="error-text">' + esc(file.name) + ' is not a video file.</span>';
+    return;
+  }
+  setPlayerSlot(wallId, file.name, URL.createObjectURL(file), true);
+}
+
+function wirePlayerDropzone(wallId){
+  const dz = document.querySelector('[data-player-dz="' + wallId + '"]');
+  if (!dz) return;
+  ['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e => {
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) addLocalFileToPlayer(wallId, f);
+  });
 }
 
 async function refreshPlayerLibraryList(){
-  const sel = document.getElementById('playerLibPick');
-  if (!sel) return;
   let rows = [];
   try { rows = (await api('/api/library')).library || []; } catch (e) { return; }
   const videos = rows.filter(r => r.kind === 'video');
-  sel.innerHTML = '<option value="">choose a generated clip…</option>' + videos.map(r => {
-    const bits = [r.wall, r.move, r.model, r.durationSec ? r.durationSec + 's' : null].filter(Boolean).join(' · ');
-    return '<option value="' + esc(r.url) + '" data-label="' + esc(bits || 'clip') + '">' + esc(bits || r.url) + '</option>';
-  }).join('');
+  WALLS.forEach(w => {
+    const sel = document.getElementById('playerLibPick-' + w.id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">choose a generated clip…</option>' + videos.map(r => {
+      const bits = [r.wall, r.move, r.model, r.durationSec ? r.durationSec + 's' : null].filter(Boolean).join(' · ');
+      return '<option value="' + esc(r.url) + '" data-label="' + esc(bits || 'clip') + '">' + esc(bits || r.url) + '</option>';
+    }).join('');
+  });
 }
 
-// Same steps as the wall transport bar's playAllWalls() - wait for every clip
-// to actually be seekable before starting any of them (otherwise the first
-// one runs ahead while a later one is still buffering), mute so autoplay
-// policies do not block a synchronized start, and report a length mismatch
-// since mismatched clips drift apart on a loop.
+// Same start as the wall transport bar - startTogether() waits until every
+// clip can actually play through, starts them at once, and keeps the sync lock
+// running; see its comment for why the old per-transport copy needed several
+// clicks.
 async function playAllPlayer(){
   const vids = playerVideoEls();
   const st = document.getElementById('playerTransportStatus');
@@ -1915,24 +2794,16 @@ async function playAllPlayer(){
     return;
   }
   const loop = document.getElementById('playerLoopChk').checked;
-  vids.forEach(v => { v.loop = loop; v.muted = true; v.pause(); v.currentTime = 0; });
-  await Promise.all(vids.map(v => v.readyState >= 2
-    ? Promise.resolve()
-    : new Promise(res => {
-        const done = () => { v.removeEventListener('loadeddata', done); res(); };
-        v.addEventListener('loadeddata', done);
-        setTimeout(done, 4000);
-      })));
-  await Promise.all(vids.map(v => v.play().catch(() => {})));
-  const durs = vids.map(v => v.duration || 0);
-  const spread = Math.max(...durs) - Math.min(...durs);
+  const r = await startTogether(vids, loop, st);
+  if (r.failed) return;
   st.className = 'statusline ok';
   st.textContent = `Playing ${vids.length} clip${vids.length === 1 ? '' : 's'} together`
-    + (loop ? ', looping' : '')
-    + (spread > 0.15 ? ` — note the clips differ in length by ${spread.toFixed(2)}s, so they will drift apart on a loop.` : '.');
+    + (loop ? ', looping.' : '.');
+  checkPlayerTiming();
 }
 
 function pauseAllPlayer(){
+  stopSyncLock();
   playerVideoEls().forEach(v => v.pause());
   const st = document.getElementById('playerTransportStatus');
   st.className = 'statusline';
@@ -1940,38 +2811,41 @@ function pauseAllPlayer(){
 }
 
 function wirePlayer(){
-  document.getElementById('playerFilePickBtn').addEventListener('click', () =>
-    document.getElementById('playerFileInput').click());
-  document.getElementById('playerFileInput').addEventListener('change', (e) => {
-    addLocalFilesToPlayer(e.target.files);
-    e.target.value = '';   // so picking the same file again still fires 'change'
+  WALLS.forEach(w => {
+    const input = document.getElementById('playerFileInput-' + w.id);
+    input.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) addLocalFileToPlayer(w.id, f);
+      e.target.value = '';   // so picking the same file again still fires 'change'
+    });
   });
 
-  const dz = document.getElementById('playerDropzone');
-  ['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
-  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
-  dz.addEventListener('drop', e => addLocalFilesToPlayer(e.dataTransfer.files));
+  const panel = document.getElementById('tabpanel-player');
+  panel.addEventListener('click', (e) => {
+    const filePick = e.target.closest('[data-player-filepick]');
+    if (filePick) { document.getElementById('playerFileInput-' + filePick.dataset.playerFilepick).click(); return; }
 
-  document.getElementById('playerLibAddBtn').addEventListener('click', () => {
-    const sel = document.getElementById('playerLibPick');
-    const opt = sel.selectedOptions[0];
-    if (!opt || !opt.value) return;
-    addPlayerItem(opt.dataset.label || 'library clip', opt.value, false);
-    sel.value = '';
+    const libAdd = e.target.closest('[data-player-libadd]');
+    if (libAdd) {
+      const wallId = libAdd.dataset.playerLibadd;
+      const sel = document.getElementById('playerLibPick-' + wallId);
+      const opt = sel.selectedOptions[0];
+      if (!opt || !opt.value) return;
+      setPlayerSlot(wallId, opt.dataset.label || 'library clip', opt.value, false);
+      sel.value = '';
+      return;
+    }
+
+    const remove = e.target.closest('[data-player-remove]');
+    if (remove) { removePlayerSlot(remove.dataset.playerRemove); return; }
   });
 
   document.getElementById('playerPlayAllBtn').addEventListener('click', () => playAllPlayer().catch(() => {}));
   document.getElementById('playerPauseAllBtn').addEventListener('click', pauseAllPlayer);
   document.getElementById('playerLoopChk').addEventListener('change', (e) => {
-    playerVideoEls().forEach(v => { v.loop = e.target.checked; });
+    syncLoop = e.target.checked;   // looping is done by the sync lock, see startTogether
   });
   document.getElementById('playerClearBtn').addEventListener('click', clearPlayerItems);
-
-  document.getElementById('playerGrid').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-player-remove]');
-    if (!b) return;
-    removePlayerItem(Number(b.dataset.playerRemove));
-  });
 
   renderPlayerGrid();
 }
@@ -2026,6 +2900,13 @@ function buildTabs(){
 
   // Library owns no existing markup, so it is built here rather than
   // assembled from relocated sections like the other three.
+  // The shelf and the Video tab's source-set strip. Both own their markup
+  // outright rather than being assembled from relocated page sections, so
+  // they are injected the same way the Library tab is.
+  panels.image.insertAdjacentHTML('afterbegin', SETS_MARKUP);
+  panels.video.insertAdjacentHTML('afterbegin', VIDEO_SET_MARKUP);
+  wireSets().catch(e => console.error('image sets shelf failed to wire:', e));
+
   panels.library.insertAdjacentHTML('afterbegin', LIBRARY_MARKUP);
   ['libKind','libWall','libRating'].forEach(id =>
     document.getElementById(id).addEventListener('change', () => refreshLibrary().catch(() => {})));
@@ -2474,6 +3355,19 @@ document.getElementById('editModelSelect').addEventListener('change', async (e) 
   await api('/api/model-choice', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ editModel: e.target.value }) });
   await renderAllFields('refine');
 });
+document.getElementById('videoEditModelSelect').addEventListener('change', async (e) => {
+  await api('/api/model-choice', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ videoEditModel: e.target.value }) });
+  await renderAllFields('vidrefine');
+});
+
+// The catalogue does not tag editing models, but the video ones are named for
+// it (kling_video_edit, flux_3_video_edit). Filtered from the live list so a
+// new one appears without a code change.
+function populateVideoEditSelect(selectEl, videoModels){
+  const edits = (videoModels || []).filter(m => /edit/i.test(m.job_type));
+  selectEl.innerHTML = edits.map(m => `<option value="${m.job_type}">${m.display_name}</option>`).join('');
+  return edits;
+}
 
 document.getElementById('imageCompositionMode').addEventListener('change', async (e) => {
   imageCompositionMode = e.target.value;
@@ -2511,17 +3405,32 @@ const VIDEO_MODE_HINT = {
          + 'the one move.',
 };
 
-function setMode(group, value){
+// v2: the options were reordered (image: upload first; video: preset first).
+// A pick stored under the old layout would hold everyone on whatever they last
+// clicked and the new defaults would never show, so the key moved.
+const MODE_KEY = 'triwall.mode.v2.';
+const MODE_DEFAULT = { image: 'image', video: 'text' };
+
+function setMode(group, value, persist){
   const wrap = document.getElementById(group === 'image' ? 'imageSourceMode' : 'videoSourceMode');
   const attr = group === 'image' ? 'imode' : 'vmode';
   if (!wrap) return;
   [...wrap.querySelectorAll('.modebtn')].forEach(b =>
     b.classList.toggle('active', b.dataset[attr] === value));
+  // These two paragraphs restated each other and the mode buttons directly
+  // above them. The text is kept - it just goes to the console now instead of
+  // sitting between the mode picker and the controls it describes.
+  const hintText = (group === 'image' ? IMAGE_MODE_HINT : VIDEO_MODE_HINT)[value] || '';
   const hint = document.getElementById(group === 'image' ? 'imageModeHint' : 'videoModeHint');
-  if (hint) hint.textContent = (group === 'image' ? IMAGE_MODE_HINT : VIDEO_MODE_HINT)[value] || '';
+  if (hint) hint.textContent = '';
+  if (hintText) logNote(group === 'image' ? 'Image \u00b7 mode' : 'Video \u00b7 mode',
+                        hintText, 'mode:' + group);
   if (group === 'image') {
-    // Option C is the only one that needs the decode slot.
     applyImageDisclosure(value);
+    // The server only lets the scene text steer a prompt while the Scene card
+    // is visible (sceneInUse in server.js), so it has to know which option is on.
+    api('/api/model-choice', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ imageSourceMode: value }) }).catch(() => {});
   } else {
     // Rig controls are a manual choice; with a decoded reference they are read
     // back from the measurement instead, so leave them visible but say so.
@@ -2530,11 +3439,13 @@ function setMode(group, value){
     const dz = document.getElementById('decodeSection');
     if (dz) dz.style.display = value === 'decoded' ? '' : 'none';
     const bar = document.getElementById('rigbarNote');
-    if (bar) bar.textContent = value === 'decoded'
+    const barText = value === 'decoded'
       ? 'These are filled in from the decoded reference — change them only to override what was measured.'
       : 'Choose what the physical camera does. All three walls are derived from this one choice.';
+    if (bar) bar.textContent = '';
+    logNote('Video \u00b7 mode', barText, 'rigbarnote');
   }
-  try { localStorage.setItem('triwall.mode.' + group, value); } catch (e) {}
+  if (persist) { try { localStorage.setItem(MODE_KEY + group, value); } catch (e) {} }
 }
 
 ['image','video'].forEach(group => {
@@ -2542,11 +3453,16 @@ function setMode(group, value){
   if (!wrap) return;
   wrap.addEventListener('click', e => {
     const b = e.target.closest('.modebtn');
-    if (b) setMode(group, b.dataset[group === 'image' ? 'imode' : 'vmode']);
+    if (b) setMode(group, b.dataset[group === 'image' ? 'imode' : 'vmode'], true);
   });
   let saved = null;
-  try { saved = localStorage.getItem('triwall.mode.' + group); } catch (e) {}
-  setMode(group, saved || (group === 'image' ? 'text' : 'decoded'));
+  try { saved = localStorage.getItem(MODE_KEY + group); } catch (e) {}
+  // Both open on option A: image on "upload a centre image", video on "pick a
+  // preset camera path". Decoding a client clip is the exception, not the
+  // routine case. Note setMode's third argument: applying a default must not
+  // persist it, or this line could never change behaviour for anyone who had
+  // already opened the page once.
+  setMode(group, saved || MODE_DEFAULT[group], false);
 });
 
 // ================= CONNECTIONS =================
@@ -2561,6 +3477,10 @@ function renderPreflight(d){
       : '';
     const loginBtn = (!c.ok && c.canLogin)
       ? `<button class="btn small" data-login="${c.id}">Sign in</button>` : '';
+    // Signing out and in again reuses whoever the BROWSER is signed in as, so
+    // choosing a different account needs its own path: a private window.
+    const switchBtn = (c.id === 'higgsfield' && (c.canLogin || c.canLogout))
+      ? `<button class="btn ghost small" data-login="${c.id}" data-switch="1" title="Signs this app out and opens Higgsfield sign-in in a private browser window, so you pick the account instead of the browser reusing the one it is already signed in as">Switch account</button>` : '';
     const testBtn = c.canTest
       ? `<button class="btn ghost small" data-test="${c.id}" title="Makes one real call (~$0.06) to prove sign-in actually works">Test</button>` : '';
     const installBtn = c.canInstall
@@ -2590,7 +3510,7 @@ function renderPreflight(d){
       : '';
     const session = c.session
       ? `<div class="detail">Session valid for ${c.session.hoursLeft}h (expires ${new Date(c.session.expiresAt).toLocaleString()}).</div>` : '';
-    return `<div class="conn">
+    return `<div class="conn ${c.required ? 'is-required' : 'is-optional'}">
       <span class="dot ${cls}"></span>
       <div>
         <div class="name">${c.label}<span class="req">${c.required ? 'required' : 'optional'}</span></div>
@@ -2599,7 +3519,7 @@ function renderPreflight(d){
         ${wsPick}
         ${fix}
       </div>
-      <div class="acts">${installBtn}${loginBtn}${testBtn}${logoutBtn}</div>
+      <div class="acts">${installBtn}${loginBtn}${switchBtn}${testBtn}${logoutBtn}</div>
     </div>`;
   }).join('');
   const banner = d.allRequiredOk
@@ -2700,10 +3620,75 @@ Run this yourself in a terminal:
   }
   const login = e.target.closest('[data-login]');
   if (!login) return;
+  const switching = login.dataset.switch === '1';
+  if (switching && !confirm('Switch Higgsfield account?\n\nThis signs the app out, then opens Higgsfield sign-in in a '
+      + 'PRIVATE browser window. Sign in there with the account you want and click Allow. A normal Higgsfield tab '
+      + 'will also open - the app ignores it automatically, so just close it.')) return;
+  // Each click is a new attempt (the server replaces any pending one), so an
+  // older click's wait loop must stand down rather than report on it.
+  const attempt = ++hfLoginAttempt;
+  if (!login.dataset.label) login.dataset.label = login.textContent;
+  const wasLabel = login.dataset.label;
   login.disabled = true;
   try {
     const r = await api('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ which: login.dataset.login }) });
+      body: JSON.stringify({ which: login.dataset.login, switchAccount: switching }) });
+    // HIGGSFIELD SIGNS IN IN THE BROWSER, NOT IN A CONSOLE. The server runs the
+    // CLI itself and watches it, so the button waits here instead of telling the
+    // operator to go and read a terminal window. Claude still needs one — it is
+    // an interactive REPL — so that path keeps the old message.
+    if (r.inBrowser) {
+      // Stays clickable: a click now restarts a stuck sign-in instead of
+      // leaving the operator to wait out the CLI's five-minute timeout.
+      login.disabled = false;
+      login.textContent = 'Waiting for browser… (click to restart)';
+      // The way out when the tab did not open, or Higgsfield's own page stalls
+      // (it has - on a stale session after a website sign-out): the real link,
+      // shown as soon as the CLI has produced it, to open in a private window.
+      // Clicking Sign in again also works now - it replaces the stuck attempt.
+      let help = document.getElementById('hfLoginHelp');
+      if (!help) {
+        help = document.createElement('div');
+        help.id = 'hfLoginHelp';
+        help.className = 'statusline';
+        help.style.marginTop = '6px';
+        login.insertAdjacentElement('afterend', help);
+      }
+      help.textContent = 'Opening Higgsfield in your browser…';
+      delete help.dataset.url;
+      const started = Date.now();
+      for (;;) {
+        await new Promise(done => setTimeout(done, 1500));
+        if (attempt !== hfLoginAttempt) return;          // a newer click took over
+        let st;
+        try { st = await api('/api/auth/login-status'); } catch (e) { break; }
+        if (attempt !== hfLoginAttempt) return;
+        if (st.url && help.dataset.url !== st.url) {
+          help.dataset.url = st.url;
+          const lead = switching ? st.note + ' '
+            : 'Approve the sign-in in the tab that opened. Tab missing, or the Higgsfield page stuck loading? ';
+          help.textContent = lead;
+          const a = document.createElement('a');
+          a.href = st.url; a.target = '_blank'; a.rel = 'noreferrer';
+          a.textContent = 'The sign-in link';
+          help.appendChild(a);
+          help.appendChild(document.createTextNode(' can also be copied into a private/incognito window.'));
+        }
+        if (st.status !== 'pending') { help.remove(); }
+        if (st.status === 'ok') {
+          alert(st.note + (st.workspace ? '\nWorkspace: ' + st.workspace : ''));
+          break;
+        }
+        if (st.status === 'error') { alert('Sign-in failed: ' + st.note); break; }
+        if (Date.now() - started > 4 * 60 * 1000) {
+          alert('Still waiting for the browser after four minutes. '
+                + (st.url ? 'Open this to finish:\n\n' + st.url : 'Try Sign in again.'));
+          break;
+        }
+      }
+      await loadPreflight();
+      return;
+    }
     alert(r.note || `Run this yourself in a terminal:\n\n${r.cmd}`);
   } catch (err) {
     // Was: "Run this yourself:" + err.message — which pasted the ERROR into the
@@ -2712,8 +3697,11 @@ Run this yourself in a terminal:
     alert(err.serverDown
       ? err.message
       : `Could not open a terminal automatically (${err.message}).\n\nRun this yourself:\n\n  ${cmd}`);
-  } finally { login.disabled = false; }
+  } finally {
+    if (attempt === hfLoginAttempt) { login.disabled = false; login.textContent = wasLabel; }
+  }
 });
+let hfLoginAttempt = 0;
 
 // ================= CAMERA RIG =================
 // The locked video rules are now DERIVED server-side from one rig intent (see
@@ -2757,16 +3745,7 @@ function readRigFromForm(){
   return {
     intent: el('rigIntent').value,
     speedPct: Math.max(1, parseFloat(el('rigSpeed').value) || 100),
-    // A decode's own apply path (writeRigToForm + POST /api/rig with
-    // lastDecode.derived) sets these directly and never goes through this
-    // function. Any push that DOES come from here is by definition a manual
-    // edit, so it must clear them - otherwise the server keeps merging a
-    // stale speedInferred/decodedRate from an old decode onto a speed the
-    // operator just typed by hand, and the contract keeps claiming a number
-    // was "decoded from the client reference" when it no longer is.
-    speedInferred: false,
-    decodedRate: null,
-    centrePct: Math.max(1, parseFloat(el('rigCentre').value) || 100),
+    centrePct: Math.max(1, parseFloat(el('rigCentre').value) || 25),
     yawDegPerSec: Math.max(0.1, parseFloat(el('rigYaw').value) || 6),
     tiltDegPerSec: Math.max(0.1, parseFloat(el('rigTilt').value) || 4),
     durationSec: Math.max(1, parseInt(el('rigDuration').value, 10) || 5),
@@ -2774,8 +3753,18 @@ function readRigFromForm(){
       enabled: !!subject,
       subject,
       direction: el('rigElementDir').value,
-      ratePctPerSec: Math.max(1, parseFloat(el('rigElementRate').value) || 17.5),
-      perWallSec: +(33.3 / Math.max(1, parseFloat(el('rigElementRate').value) || 17.5)).toFixed(2),
+      sizePctOfHeight: Math.min(90, Math.max(1, parseFloat(el('rigElementSize').value) || 12)),
+      heightPctFromTop: Math.min(95, Math.max(1, parseFloat(el('rigElementHeight').value) || 35)),
+      // THE OPERATOR SETS THE TIMES; the crossing speed is read off them. The
+      // "% of the room per second" box this replaced was a unit nobody thinks
+      // in, and its own default asked for a 5.71s crossing inside a 5s clip.
+      windows: readElementWindows(),
+      // perWallSec is NOT sent any more. The page worked it out as 33.3/rate
+      // and rig.js stored a flat 1.9s, so whichever of the two a reader
+      // happened to consult decided the timing, and moving the rate box
+      // changed one of them and not the other. rigspec.elementSchedule is the
+      // only place it is computed now, and it also checks the crossing fits
+      // inside the clip - which at the default rate it did not.
       entrySec: 2.0,
     },
   };
@@ -2786,14 +3775,16 @@ function writeRigToForm(rig){
   const el = id => document.getElementById(id);
   el('rigIntent').value = RIGMOVE_NORMALISE(rig.intent);
   el('rigSpeed').value = rig.speedPct ?? 100;
-  el('rigCentre').value = rig.centrePct ?? 100;
+  el('rigCentre').value = rig.centrePct ?? 25;
   el('rigYaw').value = rig.yawDegPerSec ?? 6;
   el('rigTilt').value = rig.tiltDegPerSec ?? 4;
   el('rigDuration').value = rig.durationSec ?? 5;
   const c = rig.element || {};
   el('rigElement').value = c.subject || '';
   el('rigElementDir').value = c.direction || 'right_to_left';
-  el('rigElementRate').value = c.ratePctPerSec ?? 17.5;
+  el('rigElementSize').value = c.sizePctOfHeight ?? 12;
+  el('rigElementHeight').value = c.heightPctFromTop ?? 35;
+  writeElementWindows(c.windows, rig.durationSec ?? 5);
   try { renderElementRef(); } catch (e) {}
   rigFieldVisibility(RIGMOVE_NORMALISE(rig.intent));
 }
@@ -2824,6 +3815,7 @@ function applyRigResponse(data){
     refreshImageFixedRulesDisplay();
   }
   rigState = data.rig || rigState;
+  if ('elementPlan' in data) elementPlanCache = data.elementPlan;
   document.getElementById('rigSummary').textContent = data.summary ? `Rig: ${data.summary}` : '';
   const note = (data.applied && data.applied.calibrationNote) || '';
   const law = data.rules && data.rules.center
@@ -2844,7 +3836,8 @@ async function pushRig(){
   }
 }
 
-['rigIntent','rigYaw','rigTilt','rigElement','rigElementDir','rigElementRate']
+['rigIntent','rigYaw','rigTilt','rigElement','rigElementDir','rigElementSize','rigElementHeight',
+ 'elWinLeftIn','elWinLeftOut','elWinCenterIn','elWinCenterOut','elWinRightIn','elWinRightOut']
   .forEach(id => document.getElementById(id).addEventListener('change', pushRig));
 
 // Speed and Clip seconds are independent (see pushSpeed/pushDuration above).
@@ -2858,6 +3851,16 @@ document.getElementById('rigCentre')
   .addEventListener('change', () => pushSpeed().catch(() => {}));
 document.getElementById('rigDuration')
   .addEventListener('change', () => pushDuration().catch(() => {}));
+// The clip length is the ceiling on all six element timestamps, so moving it has
+// to move their max and re-flag any row that now points past the end.
+document.getElementById('rigDuration').addEventListener('change', () => {
+  const d = Math.max(1, parseInt(document.getElementById('rigDuration').value, 10) || 5);
+  EL_WALLS.forEach(w => ['enter', 'exit'].forEach(k => {
+    const box = document.getElementById(elWinId(w, k));
+    if (box) box.max = d;
+  }));
+  markElementWindows(d);
+});
 
 // Changing the preset or the clip length re-reads the inspector immediately, so
 // the numbers visibly change the moment you pick a different move rather than
@@ -3106,10 +4109,27 @@ document.getElementById('verifyMotionBtn').addEventListener('click', async (e) =
           + '<br><span style="color:var(--muted-dim);">' + detail + '</span>';
       }
     });
-    const bad = d.verdict === 'mismatch' || d.verdict === 'off-spec';
+    const bad = d.verdict === 'mismatch' || d.verdict === 'off-spec' || (d.pace && !d.pace.matched);
     st.className = bad ? 'statusline' : 'statusline ok';
-    st.innerHTML = (bad ? '<span class="error-text">' + d.verdict.toUpperCase() + ' — ' : '')
+    const label = d.verdict === 'match' ? 'CENTRE OUT OF PACE' : String(d.verdict).toUpperCase();
+    st.innerHTML = (bad ? '<span class="error-text">' + label + ' — ' : '')
       + (d.notes || []).join(' ') + (bad ? '</span>' : '');
+    // The centre's pace against the sides, and the trim that would have
+    // matched it (rigspec.paceMatch). Applied only on a click - it changes the
+    // next centre prompt, and a set is one sample of a noisy generator.
+    if (d.pace && !d.pace.matched) {
+      const b = document.createElement('button');
+      b.className = 'btn small';
+      b.style.marginLeft = '8px';
+      b.textContent = 'Set centre trim to ' + d.pace.suggestedCentrePct + '%';
+      b.addEventListener('click', async () => {
+        document.getElementById('rigCentre').value = d.pace.suggestedCentrePct;
+        await pushSpeed().catch(() => {});
+        b.disabled = true;
+        b.textContent = 'Centre trim set to ' + d.pace.suggestedCentrePct + '% — regenerate the centre wall';
+      });
+      st.appendChild(b);
+    }
   } catch (err) {
     st.innerHTML = '<span class="error-text">' + err.message + '</span>';
   } finally { e.target.disabled = false; }
@@ -3291,32 +4311,59 @@ async function refreshPresetDebug(){
 // pushes the picture toward frame left. The prompt states the picture,
 // because naming the camera is what inverted it every previous time; the
 // panel states both so the two can be checked against each other.
+let rsrOpen = false;   // the per-wall direction table, closed until asked for
 function renderRigSpeedReadout(spec){
   const host = document.getElementById('rigSpeedReadout');
   if (!host) return;
   const rows = spec.rows || [];
   const over = rows.some(r => r.overSafeCap);
 
-  host.innerHTML =
-    '<div class="rsr-head"><strong>Speed %</strong> and <strong>Clip seconds</strong> are independent: '
+  const prose =
+    '<strong>Speed %</strong> and <strong>Clip seconds</strong> are independent: '
     + 'Speed is a measured RATE (100% = 8.48% of frame width per second on a side wall, from '
     + (spec.refClip || 'the reference render') + '), and travel = rate x duration - so doubling the '
     + 'speed doubles the distance at any clip length, and changing the clip length alone does not '
     + 'change the pace. Clip seconds also sets every wall\'s own model duration field, since a '
     + 'contract that states a different length than the model renders invalidates every checkpoint. '
     + 'There is no km/h anywhere in this - pixels carry no depth, so none was ever measurable. The '
-    + 'camera/picture lines below are not sent: the prompt states the picture only.</div>'
-    + '<table class="rsr">' + rows.map(r => {
+    + 'camera/picture lines are not sent: the prompt states the picture only.';
+
+  const table = '<table class="rsr">' + rows.map(r => {
         const g = r.gloss || {};
         return '<tr><td class="rsr-w">' + r.wall + '</td>'
           + '<td class="rsr-c">' + esc(g.camera || '') + '</td>'
           + '<td class="rsr-a">&rarr;</td>'
           + '<td class="rsr-p">' + esc(g.picture || '') + '</td>'
           + '<td class="rsr-n">' + esc(g.numbers || '') + '</td></tr>';
-      }).join('') + '</table>'
-    + (over ? '<div class="rsr-warn">Over the ' + spec.safePxPerFrame + ' px/frame room ceiling at '
-              + spec.durationSec + 's. Lengthen the clip to calm it, or accept it as a short beat.</div>'
-            : '');
+      }).join('') + '</table>';
+
+  const warn = over
+    ? '<div class="rsr-warn">Over the ' + spec.safePxPerFrame + ' px/frame room ceiling at '
+      + spec.durationSec + 's. Lengthen the clip to calm it, or accept it as a short beat.</div>'
+    : '';
+
+  // ON SCREEN: the warning, and a way in. The paragraph and the per-wall
+  // camera/picture table were permanent fixtures here - correct, and read
+  // maybe twice ever after the first week, while costing a screenful above
+  // the controls they describe on every single visit. The warning is the one
+  // part that is genuinely time-critical (it says this clip will tear), so it
+  // stays put; the rest is one click away and mirrored into the console.
+  host.innerHTML = warn
+    + '<div class="rsr-actions">'
+    + '<button class="whybtn" type="button" id="rsrToggle" style="margin-left:0;">'
+    + (rsrOpen ? 'hide the per-wall directions' : 'show the per-wall directions') + '</button>'
+    + '<button class="whybtn" type="button" id="rsrExplain">why speed and clip length are separate</button>'
+    + '</div>'
+    + (rsrOpen ? '<div class="rsr-detail">' + table + '</div>' : '');
+
+  // The console always carries the full thing, so it is readable without
+  // touching the page at all.
+  logNote('Video \u00b7 rig', prose + table + warn, 'rig-readout');
+
+  const t = document.getElementById('rsrToggle');
+  if (t) t.addEventListener('click', () => { rsrOpen = !rsrOpen; renderRigSpeedReadout(spec); });
+  const x = document.getElementById('rsrExplain');
+  if (x) x.addEventListener('click', () => { logNote('Video \u00b7 rig', prose, 'rig-prose'); openConsole(); });
 }
 
 function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
@@ -3330,28 +4377,102 @@ function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); 
 // confidence if you can see the hand-off times.
 function renderElementTimeline(rig){
   const wrap = document.getElementById('elementTimeline');
+  // THE SCHEDULE COMES FROM THE SERVER. This function used to work it out here
+  // from c.perWallSec, which was a THIRD copy of the same arithmetic (the page
+  // wrote 33.3/rate, rig.js kept a flat 1.9s, principles.js read whichever it
+  // was handed). They disagreed, so the timetable on screen was not necessarily
+  // the timetable in the prompt. rigspec.elementSchedule is the only copy now,
+  // and it also refuses a crossing that does not fit inside the clip.
+  const plan = elementPlanCache;
   const c = rig && rig.element;
-  if (!c || !c.enabled || !c.subject) { wrap.innerHTML = ''; return; }
-  const dir = c.direction === 'left_to_right' ? 'left_to_right' : 'right_to_left';
-  const order = dir === 'right_to_left' ? ['right','center','left'] : ['left','center','right'];
-  const perWall = c.perWallSec || 1.9;
-  const entry = c.entrySec != null ? c.entrySec : 2.0;
-  const enterEdge = dir === 'right_to_left' ? 'RIGHT' : 'LEFT';
-  const exitEdge  = dir === 'right_to_left' ? 'LEFT' : 'RIGHT';
-  const rows = order.map((w, i) => {
-    const inAt = (entry + i * perWall).toFixed(2);
-    const outAt = (entry + (i + 1) * perWall).toFixed(2);
-    return `<tr><td>${i + 1}</td><td><b>${w}</b></td><td class="num">${inAt}s</td>` +
-           `<td class="num">${outAt}s</td><td>enters ${enterEdge}, exits ${exitEdge}</td></tr>`;
-  }).join('');
-  const total = (entry + 3 * perWall).toFixed(2);
+  if (!plan || !plan.rows || !plan.rows.length || !c || !c.enabled || !c.subject) {
+    wrap.innerHTML = ''; return;
+  }
+  // Frames as well as seconds: the frame numbers are what the contract states,
+  // and they are the thing a delivered clip can be checked against exactly.
+  const rows = plan.rows.map((r, i) =>
+    `<tr><td>${i + 1}</td><td><b>${r.wall}</b></td>` +
+    `<td class="num">${r.inAt.toFixed(2)}s</td><td class="num">${r.outAt.toFixed(2)}s</td>` +
+    `<td class="num">f${r.inFrame}–f${r.outFrame}</td>` +
+    `<td class="num">${r.onScreenSec.toFixed(2)}s</td>` +
+    `<td>enters ${r.enterEdge}, exits ${r.exitEdge}</td></tr>`
+  ).join('');
+  const first = plan.rows[0], last = plan.rows[plan.rows.length - 1];
+  const count = first.count != null ? first.count : null;
+  const warn = (plan.notes && plan.notes.length)
+    ? `<div class="rsr-warn">${esc(plan.notes.join(' '))}</div>` : '';
   wrap.innerHTML = `<table class="stat">` +
-    `<tr><th>#</th><th>Wall</th><th class="num">On</th><th class="num">Off</th><th>Edges</th></tr>` +
-    rows + `</table>` +
-    `<div class="statusline" style="margin-top:6px;">One ${c.subject}, ${dir.replace(/_/g,'-')}, ` +
-    `${perWall}s per wall — clear of the rig by ${total}s. Each wall is told it is already mid-flight and ` +
-    `cut off by the frame edge, so the hand-offs join up instead of three objects starting and stopping.</div>`;
+    `<tr><th>#</th><th>Wall</th><th class="num">Enter</th><th class="num">Exit</th>` +
+    `<th class="num">Frames</th><th class="num">On screen</th><th>Edges</th></tr>` +
+    rows + `</table>` + warn +
+    `<div class="statusline" style="margin-top:6px;">` +
+    `${count != null ? count + ' x ' : ''}${esc(first.subject)}, ` +
+    `${first.direction.replace(/_/g,'-')}, ${first.sizePctOfHeight}% of frame height at ` +
+    `${first.heightPctFromTop}% down. ` +
+    `Speed is read off your times, not set: ` +
+    plan.rows.map(r => `${r.wall} ${r.crossRateFrameWidthsPerSec}`).join(', ') +
+    ` frame-widths per second. The journey runs ${first.firstEnter.toFixed(2)}s–` +
+    `${last.lastExit.toFixed(2)}s of a ${first.durationSec}s clip, and each wall is given its two ` +
+    `frame numbers as a hard in and out.</div>`;
 }
+
+// ---- the travelling element's six timestamps -------------------------------
+// These replaced a single "% of the room per second" field. Two reasons, both
+// from delivered output: the pace box is a unit nobody thinks in (its default
+// of 17.5%/s asks for a 5.71s crossing, which does not fit a 5s clip at all),
+// and the windows it produced were the thing that actually mattered - so the
+// number that mattered was being derived from one chosen without seeing it.
+// Now the windows ARE the input and rigspec reads the speed off them.
+const EL_WALLS = ['left', 'center', 'right'];
+function elWinId(w, which){
+  return 'elWin' + w.charAt(0).toUpperCase() + w.slice(1) + (which === 'enter' ? 'In' : 'Out');
+}
+function readElementWindows(){
+  const out = {};
+  for (const w of EL_WALLS) {
+    const a = parseFloat(document.getElementById(elWinId(w, 'enter')).value);
+    const b = parseFloat(document.getElementById(elWinId(w, 'exit')).value);
+    out[w] = { enter: Number.isFinite(a) ? a : 0, exit: Number.isFinite(b) ? b : 0 };
+  }
+  return out;
+}
+function writeElementWindows(wins, dur){
+  const d = Number(dur) || 5;
+  // Sensible first pass for a fresh rig: the relay chained across the clip in
+  // journey order, so the boxes are never empty and never point past the end.
+  const fallback = { right: { enter: +(d * 0.1).toFixed(1), exit: +(d * 0.4).toFixed(1) },
+                     center: { enter: +(d * 0.4).toFixed(1), exit: +(d * 0.7).toFixed(1) },
+                     left: { enter: +(d * 0.7).toFixed(1), exit: +d.toFixed(1) } };
+  for (const w of EL_WALLS) {
+    const src = (wins && wins[w]) ? wins[w] : fallback[w];
+    for (const k of ['enter', 'exit']) {
+      const box = document.getElementById(elWinId(w, k));
+      box.value = src[k];
+      box.max = d;            // the clip length is a hard ceiling on both boxes
+    }
+  }
+  markElementWindows(d);
+}
+// Show each wall's on-screen length beside its row, and colour it when the row
+// cannot be obeyed: past the end of the clip, or an exit at or before its entry.
+function markElementWindows(dur){
+  const d = Number(dur) || Number(document.getElementById('rigDuration').value) || 5;
+  for (const w of EL_WALLS) {
+    const a = parseFloat(document.getElementById(elWinId(w, 'enter')).value);
+    const b = parseFloat(document.getElementById(elWinId(w, 'exit')).value);
+    const cell = document.getElementById('elWin' + w.charAt(0).toUpperCase() + w.slice(1) + 'Span');
+    if (!cell) continue;
+    const bad = !(Number.isFinite(a) && Number.isFinite(b)) || b <= a || a < 0 || b > d;
+    cell.className = 'winspan' + (bad ? ' bad' : '');
+    cell.textContent = bad
+      ? (b > d ? 'past the ' + d + 's clip' : 'exit must be after enter')
+      : (b - a).toFixed(2) + 's on screen';
+  }
+}
+EL_WALLS.forEach(w => ['enter', 'exit'].forEach(k => {
+  const box = document.getElementById(elWinId(w, k));
+  if (box) box.addEventListener('input', () => markElementWindows());
+}));
 
 // The element's reference picture. Stored once on the rig, not per wall -
 // it is one object making one journey.
@@ -3453,29 +4574,116 @@ async function playAllWalls(){
     return;
   }
   const loop = document.getElementById('loopAllChk').checked;
-  vids.forEach(v => { v.loop = loop; v.muted = true; v.pause(); v.currentTime = 0; });
-
-  // Wait for every element to actually be seekable before starting any of them,
-  // otherwise the first one runs ahead while a later one is still buffering and
-  // the comparison is worthless.
-  await Promise.all(vids.map(v => v.readyState >= 2
-    ? Promise.resolve()
-    : new Promise(res => {
-        const done = () => { v.removeEventListener('loadeddata', done); res(); };
-        v.addEventListener('loadeddata', done);
-        setTimeout(done, 4000);
-      })));
-
-  await Promise.all(vids.map(v => v.play().catch(() => {})));
+  const r = await startTogether(vids, loop, st);
+  if (r.failed) return;
   const durs = vids.map(v => v.duration || 0);
   const spread = Math.max(...durs) - Math.min(...durs);
   st.className = 'statusline ok';
   st.textContent = `Playing ${vids.length} wall${vids.length === 1 ? '' : 's'} together`
     + (loop ? ', looping' : '')
-    + (spread > 0.15 ? ` — note the clips differ in length by ${spread.toFixed(2)}s, so they will drift apart on a loop.` : '.');
+    + (r.notReady ? ` — ${r.notReady} clip${r.notReady === 1 ? ' was' : 's were'} still buffering at the start; the sync lock will hold the others until it catches up` : '')
+    + (spread > 0.15 ? ` — note the clips differ in length by ${spread.toFixed(2)}s, so they cannot line up at every loop.` : '.');
+}
+
+// ONE START ROUTINE FOR BOTH TRANSPORTS (this bar and the Player tab).
+//
+// "It takes several clicks to get them playing together" had three causes:
+//   1. It started before the clips had loaded. The clips stream from the CDN
+//      with no preload, and the wait was on 'loadeddata' with a 4 s give-up -
+//      but 'loadeddata' means ONE frame is ready, not that the clip can play,
+//      and it fires once per element: a clip that had already fired it and
+//      dropped back while seeking to 0 never fired it again, so the wait always
+//      ran out and the set started half-buffered. The second click worked only
+//      because the first had filled the cache.
+//   2. Nothing held them together after the start. One stall mid-play, or
+//      loops wrapping at slightly different moments, and they stayed apart.
+//   3. play() errors were swallowed, so a clip that refused to play still
+//      reported "Playing".
+// So: preload fully, wait until every clip has finished seeking AND can play
+// through, start them together, then keep a sync lock running (below).
+function waitForPlayable(v, ms){
+  return new Promise(res => {
+    const ready = () => !v.seeking && v.readyState >= 4;   // HAVE_ENOUGH_DATA
+    if (ready()) return res(true);
+    const evs = ['seeked', 'canplay', 'canplaythrough', 'loadeddata', 'progress'];
+    let timer;
+    const finish = (ok) => { evs.forEach(e => v.removeEventListener(e, check)); clearTimeout(timer); res(ok); };
+    const check = () => { if (ready()) finish(true); };
+    evs.forEach(e => v.addEventListener(e, check));
+    timer = setTimeout(() => finish(ready()), ms);
+  });
+}
+
+async function startTogether(vids, loop, st){
+  stopSyncLock();
+  syncLoop = loop;
+  // Never the element's own loop: each clip would wrap on its own clock and
+  // slip ~0.015 s per loop (measured). The lock restarts them together instead.
+  vids.forEach(v => { v.loop = false; v.muted = true; v.pause(); });
+  vids.forEach(v => {
+    if (v.preload !== 'auto') { v.preload = 'auto'; if (v.readyState === 0) v.load(); }
+    v.currentTime = 0;
+  });
+  if (vids.some(v => v.readyState < 4 || v.seeking)) {
+    st.className = 'statusline';
+    st.textContent = 'Loading the clips so they can start together…';
+  }
+  const ready = await Promise.all(vids.map(v => waitForPlayable(v, 20000)));
+  const results = await Promise.allSettled(vids.map(v => v.play()));
+  const failed = results.filter(x => x.status === 'rejected');
+  if (failed.length) {
+    vids.forEach(v => v.pause());
+    st.innerHTML = '<span class="error-text">' + failed.length + ' clip' + (failed.length === 1 ? '' : 's')
+      + ' would not play (' + ((failed[0].reason && failed[0].reason.message) || 'unknown error')
+      + '). Nothing was started.</span>';
+    return { failed: failed.length, notReady: 0 };
+  }
+  startSyncLock(vids);
+  return { failed: 0, notReady: ready.filter(ok => !ok).length };
+}
+
+// THE SYNC LOCK. The first clip is the clock. Every 100 ms:
+//   - if any playing clip is starved (buffering), hold ALL of them until it has
+//     data again - otherwise the others run ahead of it;
+//   - if a follower has drifted more than 0.1 s from the clock, snap it back;
+//   - looping: once every clip has reached its end, restart all of them from
+//     0 together. A shorter clip waits on its last frame for the longest.
+let syncLockTimer = null, syncLoop = false;
+function stopSyncLock(){ if (syncLockTimer) { clearInterval(syncLockTimer); syncLockTimer = null; } }
+function startSyncLock(vids){
+  stopSyncLock();
+  const held = new Set();
+  syncLockTimer = setInterval(() => {
+    if (!vids.every(v => v.isConnected)) return stopSyncLock();   // a card was re-rendered
+    if (vids.every(v => v.ended)) {
+      if (!syncLoop) return stopSyncLock();
+      vids.forEach(v => { v.currentTime = 0; v.play().catch(() => {}); });
+      return;
+    }
+    const active = vids.filter(v => !v.ended && (!v.paused || held.has(v)));
+    if (!active.length) {
+      // Everything paused by hand stops the lock; a clip sitting on its last
+      // frame waiting for the others to finish does not.
+      if (!vids.some(v => v.ended)) stopSyncLock();
+      return;
+    }
+    const starved = active.some(v => v.readyState < 3 || v.seeking);
+    if (starved) {
+      active.forEach(v => { if (!v.paused && v.readyState >= 3) { v.pause(); held.add(v); } });
+      return;
+    }
+    if (held.size) { held.forEach(v => v.play().catch(() => {})); held.clear(); return; }
+    const clock = vids[0];
+    if (clock.paused || clock.ended) return;
+    vids.slice(1).forEach(v => {
+      if (v.paused || v.ended) return;
+      if (Math.abs(v.currentTime - clock.currentTime) > 0.1) v.currentTime = clock.currentTime;
+    });
+  }, 100);
 }
 
 function pauseAllWalls(){
+  stopSyncLock();
   wallVideoEls().forEach(v => v.pause());
   const st = document.getElementById('transportStatus');
   st.className = 'statusline';
@@ -3485,7 +4693,7 @@ function pauseAllWalls(){
 document.getElementById('playAllBtn').addEventListener('click', () => playAllWalls().catch(() => {}));
 document.getElementById('pauseAllBtn').addEventListener('click', pauseAllWalls);
 document.getElementById('loopAllChk').addEventListener('change', (e) => {
-  wallVideoEls().forEach(v => { v.loop = e.target.checked; });
+  syncLoop = e.target.checked;     // looping is done by the sync lock, see startTogether
 });
 
 // ================= SELF-CALIBRATION =================
@@ -3553,8 +4761,16 @@ async function loadRigRules(){
   if (!sel.options.length) {
     sel.innerHTML = Object.entries(data.intents).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
   }
+  // rigState FIRST. writeRigToForm calls renderElementRef(), which reads the
+  // element's picture out of rigState - and on a fresh page load rigState was
+  // still null at that point, so the row said "none" even with a picture
+  // attached, and generate() (which reads the same field) attached nothing.
+  // Until someone touched a rig control, the element reference did not exist as
+  // far as the page was concerned.
+  rigState = data.rig || rigState;
   writeRigToForm(data.rig);
   applyRigResponse(data);
+  try { renderElementTimeline(data.rig); } catch (e) {}
 }
 
 // ================= LAYOUT: COLLAPSE + DISCLOSURE =================
@@ -3888,15 +5104,19 @@ function referenceImagePathFor(kind, id){
 // supplied path — the client only ever has a display URL for the wall's
 // current (possibly not-yet-approved) image, not a real local file.
 function promptModeFor(kind){
-  return kind === 'img' ? 'image' : kind === 'vid' ? 'video' : 'edit';
+  return kind === 'img' ? 'image' : kind === 'vid' ? 'video' : kind === 'vidrefine' ? 'videoedit' : 'edit';
 }
 
 async function improvePrompt(kind, id){
   const ta = document.getElementById(`${kind}prompt-${id}`);
   const btn = document.getElementById(`${kind}improve-${id}`);
   const statusEl = document.getElementById(`${kind}status-${id}`);
-  const imagePath = kind === 'refine' ? null : referenceImagePathFor(kind, id);
-  const hasImageContext = kind === 'refine' ? !!wallImageSrc(id) : !!imagePath;
+  // 'refine' and 'vidrefine' resolve their own image server-side (the wall's
+  // current still, or a frame of its current clip), so no path is sent.
+  const selfResolved = kind === 'refine' || kind === 'vidrefine';
+  const imagePath = selfResolved ? null : referenceImagePathFor(kind, id);
+  const hasImageContext = kind === 'refine' ? !!wallImageSrc(id)
+    : kind === 'vidrefine' ? !!state.walls[id].genVideoUrl : !!imagePath;
 
   btn.disabled = true;
   statusEl.className = 'statusline';
@@ -3923,7 +5143,9 @@ async function improvePrompt(kind, id){
     // needs to draft one before spending a render.
     ta.dataset.botDrafted = '1';
     await api('/api/prompt', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ wall:id, mode: promptModeFor(kind), text: result.improvedPrompt }) });
-    if (kind === 'refine') updateRefineGenerateEnabled(id); else updateGenerateEnabled(id);
+    if (kind === 'refine') updateRefineGenerateEnabled(id);
+    else if (kind === 'vidrefine') updateVidRefineGenerateEnabled(id);
+    else updateGenerateEnabled(id);
     const costNote = typeof result.costUsd === 'number' ? ` (~$${result.costUsd.toFixed(3)})` : '';
     statusEl.className = 'statusline ok';
     if (result.notes) {
@@ -4059,7 +5281,8 @@ async function generate(kind, id){
       // keeps polling in the background and will update state.json once
       // it finishes; nothing here to retry.
       setPill(kind, id, 'running');
-      statusEl.textContent = result.note || 'Still rendering on Higgsfield — click "Sync from chat" in a few minutes to check.';
+      statusEl.textContent = result.note || 'Still rendering on Higgsfield — this page will pick it up when it finishes.';
+      watchRunningJobs();
     } else {
       setPill(kind, id, 'failed');
       statusEl.textContent = 'No result URL — check the raw response.';
@@ -4070,6 +5293,7 @@ async function generate(kind, id){
       clearWallRating('img', id);
       refreshWallImageDisplays(id);
       document.getElementById(`imgapprove-${id}`).style.display = result.url ? 'block' : 'none';
+      refreshApproveWaiting();
     } else {
       clearWallRating('vid', id);
       // Stamp the clip with the rig move it was generated under. Without this
@@ -4079,6 +5303,7 @@ async function generate(kind, id){
       // since this job was submitted - a five second clip takes minutes - and
       // a clip labelled with a preset it was not generated under is worse than
       // no label, because it sends you to debug the wrong contract.
+      refreshVidRefinePreview(id);
       const moveUsed = result.moveUsed || document.getElementById('rigIntent').value;
       document.getElementById(`vidresult-${id}`).innerHTML = result.url
         ? `<video controls src="${result.url}"></video>`
@@ -4122,7 +5347,8 @@ async function generateRefine(id){
       statusEl.textContent = 'Done — review below, then Approve if it looks right.';
     } else if (result.timedOut) {
       setPill('refine', id, 'running');
-      statusEl.textContent = result.note || 'Still rendering — check back shortly.';
+      statusEl.textContent = result.note || 'Still rendering — this page will pick it up when it finishes.';
+      watchRunningJobs();
     } else {
       setPill('refine', id, 'failed');
       statusEl.textContent = 'No result URL — check the raw response.';
@@ -4145,6 +5371,114 @@ async function generateRefine(id){
     btn.disabled = false;
   }
 }
+
+// Applies a video Refinement edit — the wall's CURRENT clip through the chosen
+// video-edit model (see /api/edit-video). The result replaces genVideoUrl, so
+// the Video card above shows it too.
+async function generateVidRefine(id){
+  const editableText = document.getElementById(`vidrefineprompt-${id}`).value.trim();
+  const jst = document.getElementById('videoEditModelSelect').value;
+  const schema = await loadModelSchema(jst);
+  const params = readFields('vidrefine', id, schema);
+  const fullPrompt = fullVideoEditPrompt(editableText);
+
+  const btn = document.getElementById(`vidrefinegen-${id}`);
+  const statusEl = document.getElementById(`vidrefinestatus-${id}`);
+  btn.disabled = true;
+  setPill('vidrefine', id, 'running');
+  statusEl.textContent = 'Applying edit — video edits can take several minutes…';
+
+  try {
+    await api('/api/prompt', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ wall:id, mode:'videoedit', text: editableText }) });
+    const result = await api('/api/edit-video', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ wall:id, jst, prompt: fullPrompt, params }) });
+    if (result.url) {
+      setPill('vidrefine', id, 'completed');
+      setPill('vid', id, 'completed');
+      statusEl.textContent = 'Done — the edited clip is now this wall\'s video. The previous one is in version history.';
+    } else if (result.timedOut) {
+      setPill('vidrefine', id, 'running');
+      statusEl.textContent = result.note || 'Still rendering — this page will pick it up when it finishes.';
+      watchRunningJobs();
+    } else {
+      setPill('vidrefine', id, 'failed');
+      statusEl.textContent = 'No result URL — check the raw response.';
+    }
+    state = await api('/api/state');
+    renderHistory().catch(() => {});
+    clearWallRating('vid', id);
+    clearWallRating('vidrefine', id);
+    restoreGenState('vid', id, state.walls[id].genVideoStatus, state.walls[id].genVideoUrl);
+    refreshVidRefinePreview(id);
+  } catch (e) {
+    setPill('vidrefine', id, 'failed');
+    statusEl.innerHTML = `<span class="error-text">${e.message}</span>`;
+  } finally {
+    updateVidRefineGenerateEnabled(id);
+  }
+}
+
+// PICKING UP A JOB THAT FINISHED AFTER ITS REQUEST RETURNED.
+//
+// A generation or refinement that outlives the server's wait budget is handed
+// to pollJobInBackground, which writes the result into state.json when
+// Higgsfield finishes - but nothing told the page, so a refinement that
+// completed on Higgsfield never appeared here until someone reloaded. While any
+// wall is still 'running', re-read state and redraw whatever changed. Stops by
+// itself once nothing is running, and after two hours (a server restart kills
+// the background poller and would otherwise leave 'running' forever).
+let jobWatchTimer = null, jobWatchStarted = 0;
+function anyJobRunning(st){
+  return !!st && WALLS.some(w => st.walls[w.id].genImageStatus === 'running'
+                              || st.walls[w.id].genVideoStatus === 'running');
+}
+function watchRunningJobs(){
+  if (jobWatchTimer) return;
+  jobWatchStarted = Date.now();
+  jobWatchTimer = setInterval(async () => {
+    let next;
+    try { next = await api('/api/state'); } catch (e) { return; }
+    const prev = state;
+    state = next;
+    WALLS.forEach(w => {
+      const a = prev.walls[w.id], b = next.walls[w.id];
+      if (a.genImageUrl !== b.genImageUrl || a.genImageStatus !== b.genImageStatus) {
+        refreshWallImageDisplays(w.id);
+        restoreGenState('img', w.id, b.genImageStatus, b.genImageUrl);
+        restoreGenState('refine', w.id, b.genImageStatus, b.genImageUrl);
+        if (b.genImageStatus === 'completed') {
+          clearWallRating('img', w.id); clearWallRating('refine', w.id);
+          ['img', 'refine'].forEach(k => {
+            const el = document.getElementById(`${k}status-${w.id}`);
+            if (el) el.textContent = 'Finished on Higgsfield — review, then Approve if it looks right.';
+          });
+        }
+      }
+      if (a.genVideoUrl !== b.genVideoUrl || a.genVideoStatus !== b.genVideoStatus) {
+        restoreGenState('vid', w.id, b.genVideoStatus, b.genVideoUrl);
+        restoreGenState('vidrefine', w.id, b.genVideoStatus, b.genVideoUrl);
+        refreshVidRefinePreview(w.id);
+        if (b.genVideoStatus === 'completed') {
+          clearWallRating('vid', w.id); clearWallRating('vidrefine', w.id);
+          ['vid', 'vidrefine'].forEach(k => {
+            const el = document.getElementById(`${k}status-${w.id}`);
+            if (el) el.textContent = 'Finished on Higgsfield.';
+          });
+        }
+      }
+    });
+    if (!anyJobRunning(next) || Date.now() - jobWatchStarted > 2 * 60 * 60 * 1000) {
+      clearInterval(jobWatchTimer); jobWatchTimer = null;
+      renderHistory().catch(() => {});
+    }
+  }, 8000);
+}
+
+WALLS.forEach(w => {
+  const vrta = document.getElementById(`vidrefineprompt-${w.id}`);
+  vrta.addEventListener('input', () => { vrta.dataset.userEdited = '1'; updateVidRefineGenerateEnabled(w.id); });
+  document.getElementById(`vidrefinegen-${w.id}`).addEventListener('click', () => generateVidRefine(w.id));
+  document.getElementById(`vidrefineimprove-${w.id}`).addEventListener('click', () => improvePrompt('vidrefine', w.id));
+});
 
 WALLS.forEach(w => {
   wireDropzone('vid', w.id);
@@ -4177,6 +5511,7 @@ IMAGE_WALLS.forEach(w => {
       }
       state = await api('/api/state');
       renderDropzone('vid', w.id);
+      refreshApproveWaiting();
       statusEl.textContent = 'Approved — now the reference for this wall\'s video.';
     } catch (e) {
       statusEl.innerHTML = `<span class="error-text">${e.message}</span>`;
@@ -4196,6 +5531,7 @@ WALLS.forEach(w => {
       await api('/api/approve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ wall: w.id }) });
       state = await api('/api/state');
       renderDropzone('vid', w.id);
+      refreshApproveWaiting();
       statusEl.textContent = 'Approved — now the reference for this wall\'s video.';
     } catch (e) {
       statusEl.innerHTML = `<span class="error-text">${e.message}</span>`;
@@ -4242,6 +5578,9 @@ async function verifyBuild(){
 }
 
 (async function init(){
+  // The console has to exist before anything can log into it - logNote() is a
+  // no-op while its list is missing, and the rig readout fires during init.
+  try { wireConsole(); } catch (e) { console.error('console failed to wire:', e); }
   // FIRST, synchronous, before any network call. Tabs used to be built from
   // the finished page as the LAST step, so every load showed the full
   // nine-section scroll for as long as the catalog/state/rig-rules calls
@@ -4270,9 +5609,11 @@ async function verifyBuild(){
       populateModelSelect(document.getElementById('videoModelSelect'), 'video'),
       populateModelSelect(document.getElementById('editModelSelect'), 'image'),
     ]);
-    preferDefault(document.getElementById('imageModelSelect'), imageModels, 'gpt_image_2');
-    preferDefault(document.getElementById('videoModelSelect'), videoModels, 'seedance_2_0');
+    preferDefault(document.getElementById('imageModelSelect'), imageModels, 'gpt_image_2_5');
+    preferDefault(document.getElementById('videoModelSelect'), videoModels, 'seedance_2_5');
     preferDefault(document.getElementById('editModelSelect'), editModels, 'gpt_image_2_5');
+    const videoEditModels = populateVideoEditSelect(document.getElementById('videoEditModelSelect'), videoModels);
+    preferDefault(document.getElementById('videoEditModelSelect'), videoEditModels, 'kling_video_edit');
   } catch (e) {
     ['imageModelStatus','videoModelStatus'].forEach(id => {
       const el = document.getElementById(id);
@@ -4283,10 +5624,15 @@ async function verifyBuild(){
   if (state.imageModel) document.getElementById('imageModelSelect').value = state.imageModel;
   if (state.videoModel) document.getElementById('videoModelSelect').value = state.videoModel;
   if (state.editModel) document.getElementById('editModelSelect').value = state.editModel;
+  if (state.videoEditModel) document.getElementById('videoEditModelSelect').value = state.videoEditModel;
+  // A job left running by an earlier visit (or another tab) finishes into
+  // state.json in the background; watch for it rather than wait for a reload.
+  if (anyJobRunning(state)) watchRunningJobs();
   try {
     await renderAllFields('img');
     await renderAllFields('vid');
     await renderAllFields('refine');
+    await renderAllFields('vidrefine');
     await refreshStartEndFrameVisibility();
   } catch (e) { /* no catalog -> no param fields; the rest of the page still works */ }
   // New sections. Each is wrapped so one failing endpoint (e.g. Python not
@@ -4315,6 +5661,27 @@ async function verifyBuild(){
   // that state, models and rig rules have all settled, so the panel reflects
   // the real thing rather than a mid-load guess.
   try { await refreshPresetDebug(); } catch (e) {}
+})();
+</script>
+<script>
+// Light / dark stock. Kept in its own block so the main script above stays
+// untouched by the restyle. Nothing else reads this — it only sets an
+// attribute on <html>, which the stylesheet keys off.
+(function () {
+  const root = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  let saved = null;
+  try { saved = localStorage.getItem('triwall_theme'); } catch (e) {}
+  function apply(mode) {
+    if (mode === 'dark') root.setAttribute('data-theme', 'dark');
+    else root.removeAttribute('data-theme');
+    if (btn) btn.textContent = (mode === 'dark') ? 'Light' : 'Dark';
+    try { localStorage.setItem('triwall_theme', mode); } catch (e) {}
+  }
+  apply(saved === 'dark' ? 'dark' : 'light');
+  if (btn) btn.addEventListener('click', () => {
+    apply(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
 })();
 </script>
 </body>

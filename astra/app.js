@@ -104,6 +104,17 @@ async function fitImage(id) {
   notice('Image fitted and saved. The untouched original is preserved.');
 }
 async function init() {
+  // Match main's theme preference and shared stylesheet.
+  const root = document.documentElement;
+  function applyTheme(mode) {
+    root.dataset.theme = mode;
+    $('themeToggle').textContent = mode === 'dark' ? 'Light' : 'Dark';
+    $('themeToggle').setAttribute('aria-label', `Switch to ${mode === 'dark' ? 'light' : 'dark'} theme`);
+    try { localStorage.setItem('triwall_theme',mode); } catch {}
+  }
+  let savedTheme; try { savedTheme = localStorage.getItem('triwall_theme'); } catch {}
+  applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+  $('themeToggle').addEventListener('click', () => applyTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
   $('imageWalls').innerHTML = cards('image'); $('refineWalls').innerHTML = cards('refine');
   document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => tab(el.dataset.tab)));
   for (const id of WALLS) for (const kind of ['image','refine']) {

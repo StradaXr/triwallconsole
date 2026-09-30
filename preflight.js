@@ -273,7 +273,13 @@ function openLoginTerminal(which, bins) {
   const title = which === 'higgsfield' ? 'Higgsfield sign-in' : 'Claude sign-in';
   try {
     if (process.platform === 'win32') {
-      spawn('cmd', ['/c', 'start', title, 'cmd', '/k', cmd], { detached: true, stdio: 'ignore' }).unref();
+      // The empty "" is the window title, and it is not optional. `start` reads
+      // the FIRST quoted token as the title, so `start "Higgsfield sign-in"
+      // cmd /k "C:\...\hf.exe" auth login` consumed the real title, then took
+      // the quoted exe path as a title too and tried to run the rest, giving
+      // '"C:\...\hf.exe"' is not recognized as an internal or external command.
+      // Passing "" first means the quoted path is always read as the command.
+      spawn('cmd', ['/c', 'start', '', 'cmd', '/k', cmd], { detached: true, stdio: 'ignore' }).unref();
     } else if (process.platform === 'darwin') {
       spawn('osascript', ['-e', `tell app "Terminal" to do script "${cmd.replace(/"/g, '\\"')}"`,
                           '-e', 'tell app "Terminal" to activate'], { detached: true, stdio: 'ignore' }).unref();

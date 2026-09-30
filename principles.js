@@ -347,9 +347,15 @@ function buildLockedJson(wallId, rig, extras) {
   // The km/h box is a real control again: it is threaded into the contract
   // as a scene-scale reading of the same move. The measured frame figures
   // still govern - see rigspec.cameraJson.
+  // The element's schedule is worked out BEFORE the camera block, because the
+  // camera block's negatives have to know about it: four of them forbid exactly
+  // what the element does, and left unqualified they cancel it out.
+  const elSched = RIGSPEC.elementSchedule(
+    Object.assign({}, rig, { durationSec: dur }), wallId);
   const base = RIGSPEC.cameraJson(moveId, wallId, dur, {
     speedPct: rig && Number(rig.speedPct),
     centrePct: rig && Number(rig.centrePct),
+    element: elSched,
   });
 
   // ONE line about the room, not a section. The contract carried a room
@@ -378,6 +384,121 @@ function buildLockedJson(wallId, rig, extras) {
   // is what actually ships, so the note has to land here to ever be seen).
   if (rig && rig.speedInferred && rig.decodedRate && base.camera && base.camera.speed_note) {
     base.camera.speed_note += ' Decoded from the client reference clip: ' + rig.decodedRate + '.';
+  }
+
+  // THE TRAVELLING ELEMENT. This is the thing the theatre is actually for: one
+  // object that crosses all three walls as a single continuous journey, so an
+  // audience sitting in the middle follows it with their head instead of seeing
+  // three unrelated clips.
+  //
+  // It never reached the generator. `choreographyRule` has computed these
+  // timings since the butterfly was measured, but it is assembled into the
+  // PROSE block, and prose is not what gets sent — the JSON contract is. So the
+  // subject box and the rate box moved numbers around in a string nobody
+  // transmitted, and each wall invented its own creature or none at all.
+  //
+  // The reference picture matters just as much: it rides along as an extra
+  // --image, and without being told what it is, a model treats a second
+  // attachment as more scene and paints it into the set.
+  // THE TIMETABLE IS RIGSPEC'S, not recomputed here. Three places used to work
+  // it out from the rate box and they did not agree, so the wall that mattered
+  // got a window that fell outside its own clip. See rigspec.elementSchedule.
+  const el = elSched;
+  if (el) {
+    // "5 large Owl" is five owls. The old wording answered that with "This is
+    // ONE 5 large Owl", which tells the generator the count is both five and
+    // one - and a count it cannot pin down is one it re-rolls per wall.
+    const many = el.count && el.count > 1;
+    const them = many ? 'all ' + el.count + ' of them' : 'it';
+    const they = many ? 'they' : 'it';
+    const noun = many ? el.subject : 'the ' + el.subject;
+
+    base.travelling_element = {
+      subject: el.subject,
+
+      // THE TWO TIMES ARE THE WHOLE POINT, so they lead. The operator types them
+      // per wall now; they are not derived from a pace box any more, and nothing
+      // in here may round them off. Frames as well as seconds, because a frame
+      // number is a thing you can be exactly right or exactly wrong about and
+      // "about 2 seconds" is not.
+      on_screen_exactly: 'Visible from ' + el.inAt + 's to ' + el.outAt + 's - frame '
+        + el.inFrame + ' to frame ' + el.outFrame + ' of ' + el.lastFrame + '. These two times are '
+        + 'fixed and are not a suggestion: frame ' + el.inFrame + ' is the FIRST frame any part of '
+        + 'it is visible, frame ' + el.outFrame + ' is the LAST. Do not start it early, do not let '
+        + 'it run on, do not ease it in or out.',
+      enters: { edge: el.enterEdge, at_second: el.inAt, at_frame: el.inFrame },
+      exits: { edge: el.exitEdge, at_second: el.outAt, at_frame: el.outFrame },
+      crossing_time: el.onScreenSec + 's from edge to edge. Pace it so it is exactly clear of the '
+        + el.exitEdge + ' edge at frame ' + el.outFrame + ' - not still leaving, not already long '
+        + 'gone.',
+
+      // WHERE IT IS, SECOND BY SECOND. Entry and exit times on their own were
+      // read as loose cues and overrun every time: on the delivered set of
+      // 2026-09-23 the right wall took its 2.0s entry exactly as asked and was
+      // still showing the owls at 5.0s against a 2.95s exit. The camera half of
+      // this contract is obeyed because it is given as a position at a time, so
+      // the element is now given the same.
+      x_path: el.xPath,
+      x_path_key: '[seconds, x of its centre]. 0 = left edge, 1 = right edge; outside 0..1 is clear '
+        + 'of frame. Hit these positions at these times - equal travel per equal slice of time, no '
+        + 'acceleration and no hold.',
+
+      not_in_frame: 'Frames 0-' + el.inFrame + ' (0-' + el.inAt + 's): completely absent - not '
+        + 'partly in frame, not a shadow, not a silhouette, not blurred behind anything, not '
+        + 'anywhere in the picture. Frames ' + el.outFrame + '-' + el.lastFrame + ' ('
+        + el.outAt + '-' + el.durationSec.toFixed(1) + 's): gone, frame empty of it. It appears '
+        + 'once, for ' + el.onScreenSec + 's, and at no other moment in this clip.',
+
+      // COUNT AND SIZE, BOTH STATED. Neither used to be, and the delivered set
+      // shows the cost: on one prompt and one reference picture the right wall
+      // drew 2-4 small distant owls, the centre 3-4 mid-sized ones, and the left
+      // wall a SINGLE bird in close-up filling half the frame.
+      how_many: el.count != null
+        ? 'Exactly ' + el.count + ', in every frame it appears and on all three walls.'
+        : 'Exactly as many as the subject names - same number every frame, same number every wall.',
+      size_in_frame: el.sizePctOfHeight + '% of the frame height, held at that size for the whole '
+        + 'crossing. It crosses at a distance: never filling the frame, never cut off by the top or '
+        + 'bottom edge, never coming nearer as it crosses.',
+      height_in_frame: 'Its centre stays at ' + el.heightPctFromTop + '% of the frame height down '
+        + 'from the top edge, level for the whole crossing - no rising, no dipping, no arc.',
+
+      // THE ANIMATION IS THE SAME ON ALL THREE WALLS; ONLY THE TWO TIMES DIFFER.
+      // Delivered 2026-09-23: the left wall drew one enormous owl low in frame,
+      // the right wall a handful of small ones up near the horizon, and the two
+      // read as different creatures on different journeys. Each wall is a
+      // separate job that cannot see the others, so the invariants have to be
+      // stated as absolutes rather than as "match the other walls" - there is no
+      // other wall in front of it to match.
+      same_on_every_wall: 'These are fixed values, identical in all three jobs, and none of them is '
+        + 'yours to choose: the design and markings, the count, the size (' + el.sizePctOfHeight
+        + '% of frame height), the height in frame (' + el.heightPctFromTop + '% from the top), the '
+        + 'direction (' + el.enterEdge + ' to ' + el.exitEdge + '), a constant speed, and the same '
+        + 'wing rhythm and body attitude throughout. Draw it exactly to these numbers.',
+      only_difference: 'The ONLY thing that differs between the three walls is when it is on screen. '
+        + 'On this wall that is ' + el.inAt + 's to ' + el.outAt + 's (frame ' + el.inFrame + ' to '
+        + el.outFrame + ') and nothing else changes.',
+
+      reference_image: el.refPath
+        ? 'One attached image is this element alone. Copy its design, markings, colour and '
+          + 'proportions exactly. Take nothing else from it: its background is not part of this set, '
+          + 'and do NOT copy its framing or scale - that picture is a close-up, this is not.'
+        : 'No picture supplied - take the design from the description, identical on every wall.',
+
+      continuity: (el.index > 0
+            ? 'Already mid-flight on arrival: at frame ' + el.inFrame + ' it is entering cut off by '
+              + 'the ' + el.enterEdge + ' edge, never from a standstill. ' : '')
+        + (el.index < el.lastIndex
+            ? 'Carries on past this wall: at frame ' + el.outFrame + ' it is leaving cut off by the '
+              + el.exitEdge + ' edge, never stopping, never fading out. ' : '')
+        + 'Constant speed, height and SIZE across the frame - no pause, no hover, no reversing, no '
+        + 'loop, no growing or shrinking.'
+        + (many ? ' Formation and spacing hold, and the count never changes: ' + el.count + ' in, '
+                + el.count + ' out.' : ''),
+
+      independent_of_camera: 'The ONLY thing allowed to move on its own, and it is one leg of a '
+        + 'single flight across all three walls. Everything else obeys the camera block.',
+    };
+    if (el.notes && el.notes.length) base.travelling_element.pacing_note = el.notes.join(' ');
   }
 
   if (extras && typeof extras === 'object') Object.assign(base, extras);

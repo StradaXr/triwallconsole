@@ -55,7 +55,7 @@ function findVersion(store, wall, id) {
 // better" recoverable instead of gone.
 function snapshotWall(store, wall, wallState, kind, extra) {
   const hasContent = wallState.genImageUrl || wallState.genVideoUrl ||
-                     wallState.imagePrompt || wallState.videoPrompt || wallState.editPrompt;
+                     wallState.imagePrompt || wallState.videoPrompt || wallState.editPrompt || wallState.videoEditPrompt;
   if (!hasContent) return null;
   return pushVersion(store, wall, kind, Object.assign({
     // Which picture this version belongs to. likedExemplar filters on it so a
@@ -64,6 +64,7 @@ function snapshotWall(store, wall, wallState, kind, extra) {
     imagePrompt: wallState.imagePrompt || '',
     videoPrompt: wallState.videoPrompt || '',
     editPrompt: wallState.editPrompt || '',
+    videoEditPrompt: wallState.videoEditPrompt || '',
     genImageUrl: wallState.genImageUrl || null,
     genVideoUrl: wallState.genVideoUrl || null,
     approvedImagePath: wallState.approvedImagePath || null,

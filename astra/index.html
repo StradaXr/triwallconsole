@@ -5,6 +5,7 @@
 <title>Tri-Wall Console · Astra</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/tri-wall.css"><link rel="stylesheet" href="/astra.css">
 <script src="/app.js" defer></script>
 </head>
@@ -14,7 +15,7 @@
       <div class="tagline">One world. Three views. Create the center, build the sides, and refine every detail.</div>
       <div class="chatlink">Connected image workspace · 16:9 images saved on this PC</div>
     </div>
-    <div class="mast-right"><div class="rig-diagram"><div class="seg"></div><div class="seg center"></div><div class="seg"></div></div><div class="rig-label">L · C · R</div><div class="buildstamp" id="buildStamp"></div></div>
+    <div class="mast-right"><div class="rig-diagram"><div class="seg"></div><div class="seg center"></div><div class="seg"></div></div><div class="rig-label">L · C · R</div><div class="buildstamp" id="buildStamp"></div><button class="btn ghost small" id="themeToggle" title="Switch between light and dark">Dark</button></div>
   </header>
   <nav class="tabbar" aria-label="Workspace"><button class="tabbtn on" data-tab="image" aria-selected="true">Image</button><button class="tabbtn" data-tab="refine" aria-selected="false">Refine</button><button class="tabbtn" data-tab="library" aria-selected="false">Library <span class="badge" id="libraryCount">0</span></button><button class="tabbtn" data-tab="connections" aria-selected="false">Connection <span id="connectionDot" class="connection-dot"></span></button></nav>
   <div id="notice" role="status" aria-live="polite" hidden></div>

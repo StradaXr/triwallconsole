@@ -132,12 +132,23 @@ async function resolveWallLocalImagePath(wall){
   return st.approvedImagePath || st.uploadedImagePath || null;
 }
 
+// The video counterpart: a fresh local copy of this wall's CURRENT clip, so a
+// second video refinement edits the first one's result, not the original.
+async function resolveWallLocalVideoPath(wall){
+  const u = state.walls[wall].genVideoUrl;
+  if (!u) return null;
+  const ext = path.extname(new URL(u).pathname) || '.mp4';
+  const dest = path.join(UPLOADS_DIR, `${wall}-vidcurrent-${Date.now()}${ext}`);
+  await downloadFile(u, dest);
+  return dest;
+}
+
 const WALL_IDS = ['left', 'center', 'right'];
 function defaultState() {
   const walls = {};
   WALL_IDS.forEach(id => {
     walls[id] = {
-      imagePrompt: '', videoPrompt: '', editPrompt: '',
+      imagePrompt: '', videoPrompt: '', editPrompt: '', videoEditPrompt: '',
       uploadedImagePath: null,
       genImageUrl: null, genImageStatus: null,
       approvedImagePath: null,
@@ -154,7 +165,11 @@ function defaultState() {
     };
   });
   return {
-    scene: '', imageModel: null, videoModel: null, editModel: null,
+    scene: '', imageModel: null, videoModel: null, editModel: null, videoEditModel: null,
+    // Which image option the page is on: 'image' (A, upload a centre) or
+    // 'text' (B, write the scene). Decides whether the scene text counts - see
+    // sceneInUse().
+    imageSourceMode: 'image',
     videoMotionMode: 'moving', videoCameraSpeedPct: 100, imageCompositionMode: 'distinct',
     // The rig spec replaces the old per-wall independent movement rules: ONE
     // physical camera intent that derives all three walls' locked blocks.
@@ -164,6 +179,16 @@ function defaultState() {
     decoded: null,                    // last motion_probe result, for display
     history: LEARN.emptyHistory(),
     calibration: LEARN.emptyCalibration(),
+    // THE IMAGE SETS SHELF. A set is one finished (or half-finished) trio of
+    // wall pictures plus the text that made them. Before this, there was one
+    // live trio and a new centre reference destroyed it, so building a second
+    // look while the first one rendered was impossible - which is exactly what
+    // the operator does: several image sets accumulate in the time one video
+    // takes. Only IMAGE state is captured; video results stay on the live
+    // walls, because a clip belongs to the job that is rendering it, not to
+    // whichever set happens to be on the walls when it lands.
+    imageSets: [],
+    liveSetId: null,
     walls,
   };
 }
@@ -181,6 +206,8 @@ if (fs.existsSync(STATE_FILE)) {
     merged.rig.element = Object.assign(RIG.defaultRig().element, (saved.rig || {}).element || {});
     merged.calibration = Object.assign(LEARN.emptyCalibration(), saved.calibration || {});
     merged.history = Object.assign(LEARN.emptyHistory(), saved.history || {});
+    merged.imageSets = Array.isArray(saved.imageSets) ? saved.imageSets : [];
+    merged.liveSetId = saved.liveSetId || null;
     // Object.assign only merges TOP-LEVEL keys — `walls` is itself one such
     // key, so a saved `walls` object (written before some newer per-wall
     // field, e.g. editPrompt or startFramePath, existed) would otherwise
@@ -216,6 +243,22 @@ function recordInLibrary(st, entry) {
   st.library.unshift(entry);           // newest first, same order as history
   if (st.library.length > LIBRARY_MAX) st.library.length = LIBRARY_MAX;
   return entry;
+}
+
+// The element's timetable for all three walls, in journey order, so the page
+// can SHOW the schedule instead of working out its own version of it. The page
+// had its own copy of this arithmetic and rig.js had a third; the three
+// disagreed, and the one the generator actually used was whichever happened to
+// be consulted last.
+function elementPlan(rig) {
+  const RIGSPEC = require('./rigspec.js');
+  const probe = RIGSPEC.elementSchedule(rig, 'center');
+  if (!probe) return null;
+  return {
+    order: probe.order,
+    rows: probe.order.map(w => RIGSPEC.elementSchedule(rig, w)),
+    notes: probe.notes,
+  };
 }
 
 function pruneHistory(st) {
@@ -309,7 +352,7 @@ async function refreshCentreGradeRef(){
 function invalidateSidesForNewCentre(){
   ['left', 'right'].forEach(w => {
     Object.assign(state.walls[w], {
-      imagePrompt: '', videoPrompt: '', editPrompt: '',
+      imagePrompt: '', videoPrompt: '', editPrompt: '', videoEditPrompt: '',
       uploadedImagePath: null, approvedImagePath: null,
       genImageUrl: null, genImageStatus: null,
       genVideoUrl: null, genVideoStatus: null,
@@ -324,15 +367,125 @@ function invalidateSidesForNewCentre(){
   state.rig.gradeRefHorizon = null;
 }
 
+
+// ============================ THE IMAGE SETS SHELF ==========================
+//
+// WHY THIS EXISTS. A new centre reference used to call
+// invalidateSceneForNewCentre() and the previous trio was simply gone - its
+// prompts blanked, its approvals dropped. That made the tool single-track:
+// you could not start the next look until the current one had been through
+// video, even though video is the slow part and images are the fast part.
+// The operator's actual pace is several image sets per clip.
+//
+// WHAT A SET HOLDS. Image state only - the per-wall picture pointers and the
+// text that produced them - plus the scene description they were written
+// against. Deliberately NOT video: a clip belongs to the job that is
+// rendering it, and that job writes back to state.walls when it lands (see
+// pollJobInBackground), so binding clips to sets would mean a result arriving
+// against whichever set happened to be on the walls at the time.
+//
+// NOTHING IS COPIED. uploadedImagePath/approvedImagePath point into uploads/,
+// and nothing in this tool ever deletes from uploads/ (see /api/reset's own
+// note), so a set's pointers stay valid for as long as the folder does.
+const SET_FIELDS = ['imagePrompt', 'uploadedImagePath', 'approvedImagePath',
+                    'genImageUrl', 'genImageStatus'];
+const IMAGE_SETS_MAX = 40;
+
+function liveSetHasContent(){
+  return WALL_IDS.some(w => {
+    const x = state.walls[w];
+    return !!(x.uploadedImagePath || x.approvedImagePath || x.genImageUrl
+              || (x.imagePrompt || '').trim());
+  });
+}
+
+function snapshotLiveWalls(){
+  const walls = {};
+  WALL_IDS.forEach(w => {
+    walls[w] = {};
+    SET_FIELDS.forEach(f => { walls[w][f] = state.walls[w][f]; });
+  });
+  return walls;
+}
+
+function nextSetName(){
+  let n = state.imageSets.length + 1;
+  const taken = new Set(state.imageSets.map(x => x.name));
+  while (taken.has('Set ' + n)) n++;
+  return 'Set ' + n;
+}
+
+// Called before ANY transition that would otherwise destroy the live trio:
+// a new centre reference, loading another set, or a reset. Updates the set
+// the walls came from if there is one (an autosave, so repeatedly tweaking
+// one set does not litter the shelf with copies), otherwise files the trio
+// as a new set. Returns the set it wrote to, or null if there was nothing
+// worth keeping.
+function archiveLiveSet(reason){
+  if (!Array.isArray(state.imageSets)) state.imageSets = [];
+  if (!liveSetHasContent()) return null;
+  const walls = snapshotLiveWalls();
+  const existing = state.liveSetId
+    && state.imageSets.find(x => x.id === state.liveSetId);
+  if (existing) {
+    existing.walls = walls;
+    existing.scene = state.scene;
+    existing.centreRefHash = state.centreRefHash;
+    existing.updatedAt = Date.now();
+    return existing;
+  }
+  const entry = {
+    id: 'set-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+    name: nextSetName(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    reason: reason || 'archived',
+    scene: state.scene,
+    centreRefHash: state.centreRefHash,
+    imageModel: state.imageModel,
+    walls,
+  };
+  state.imageSets.unshift(entry);           // newest first, like the library
+  if (state.imageSets.length > IMAGE_SETS_MAX) state.imageSets.length = IMAGE_SETS_MAX;
+  return entry;
+}
+
+// Puts a saved set back on the walls. Image fields only - anything the set
+// does not carry (video results, start/end frames) is left exactly as it is,
+// because it belongs to the rendering job rather than to the picture.
+function loadImageSet(id){
+  const set = (state.imageSets || []).find(x => x.id === id);
+  if (!set) return null;
+  archiveLiveSet('switching sets');
+  WALL_IDS.forEach(w => {
+    const src = (set.walls || {})[w] || {};
+    SET_FIELDS.forEach(f => { state.walls[w][f] = src[f] === undefined ? null : src[f]; });
+    if (state.walls[w].imagePrompt == null) state.walls[w].imagePrompt = '';
+  });
+  state.scene = set.scene || '';
+  // The centre hash has to travel with the set, or the very next upload of
+  // this set's own centre picture would read as "the centre changed" and
+  // invalidate the trio that was just restored.
+  state.centreRefHash = set.centreRefHash || null;
+  state.liveSetId = set.id;
+  return set;
+}
+
 // An UPLOADED centre replaces the picture outright, so the centre's own stale
 // generation, approval and description go too. (On approve, by contrast, the
 // centre's description is exactly what produced the image being approved —
 // only the sides are stale there.)
 function invalidateSceneForNewCentre(){
+  // The scene text described the OLD picture. It used to survive this, hidden
+  // (the Scene card is not shown in upload mode), and went on steering the
+  // writer: a living-room centre got a left wall drafted from "a billiards
+  // hall with dark wood walls", because the side-wall writer is handed the
+  // scene as an "overall scene note" alongside the new image.
+  state.scene = '';
   const c = state.walls.center;
   c.genImageUrl = null; c.genImageStatus = null; c.approvedImagePath = null;
   c.genVideoUrl = null; c.genVideoStatus = null;
-  c.imagePrompt = ''; c.videoPrompt = ''; c.editPrompt = '';
+  c.imagePrompt = ''; c.videoPrompt = ''; c.editPrompt = ''; c.videoEditPrompt = '';
   c.startFramePath = null; c.endFramePath = null;
   invalidateSidesForNewCentre();
 }
@@ -548,6 +701,14 @@ async function runPromptBot(instruction, imagePath, opts){
 // so this writes only that — never the static scene (the image prompt already
 // covers it) and never camera movement (the locked block covers it, and the bot
 // is briefed on what that block says via promptBotRigContext).
+// THE SCENE TEXT ONLY COUNTS WHILE IT CAN BE SEEN. In upload mode (option A)
+// the Scene card is hidden, so whatever it still holds is invisible to the
+// operator - and an input nobody can see must not steer a prompt. Every writer
+// reads the scene through this.
+function sceneInUse(scene){
+  return state.imageSourceMode === 'text' ? (scene || '') : '';
+}
+
 function buildVideoInstruction(wall, currentPrompt, scene, imagePath, allImages){
   const NL = String.fromCharCode(10);
   const RIGSPEC = require('./rigspec.js');
@@ -663,7 +824,7 @@ async function draftVideoPrompt(wall, imagePath){
   const applied = LEARN.applyCalibration(state.calibration, state.rig || RIG.defaultRig());
   const locked = PRINCIPLES.buildLockedJson(wall, applied);
   return runPromptBot(
-    buildVideoInstruction(wall, st.videoPrompt || '', state.scene || '', imagePath, all),
+    buildVideoInstruction(wall, st.videoPrompt || '', sceneInUse(state.scene), imagePath, all),
     imagePath,
     { schema: VIDEO_SCENE_SCHEMA, assemble: (d) => sceneJsonFromDraft(d, locked) });
 }
@@ -722,6 +883,264 @@ function cliPromptArg(prompt) {
   if (!coerced) return s;
   return 'Follow this JSON specification exactly. Every field is a hard requirement.'
        + String.fromCharCode(10) + String.fromCharCode(10) + s;
+}
+
+// ----------------------------------------------------- Higgsfield sign-in ---
+// SIGN-IN OPENS A BROWSER, NOT A CONSOLE.
+//
+// This used to shell out to `cmd /c start "Higgsfield sign-in" cmd /k "<path>
+// \hf.exe" auth login`. Two things wrong with that. It failed outright - the
+// quoted .exe path inside `start`'s own quoting came back as
+//   '"C:\...\hf.exe"' is not recognized as an internal or external command
+// because `start` reads the first quoted token as the WINDOW TITLE. And even
+// when it worked it was the wrong shape: a console window is not something an
+// operator should have to read, and the sign-in is a browser flow anyway.
+//
+// So the CLI runs here instead, with its output captured. It prints the
+// authorize URL and opens the browser itself; we keep the URL so the page can
+// offer it as a fallback link, and we watch the process for the result.
+//
+// AND IT SELECTS THE WORKSPACE. Signing in is only half the job: a fresh
+// account comes back with no workspace bound, and every generate call then
+// fails with `workspace_membership_required` while the tool cheerfully reports
+// itself signed in. That happened on a real account switch and looked exactly
+// like a broken login. When the account has exactly one workspace there is
+// nothing to choose, so it is chosen here.
+//
+// EVERY CLICK STARTS A FRESH ATTEMPT. A second Sign in used to hand back the
+// attempt already pending - no new tab, and the button then waited out the
+// CLI's own five-minute timeout. That happened: one attempt's tab stalled on
+// Higgsfield's own sign-in page, the retry silently re-joined it, and the
+// operator watched "Waiting for browser" until "Authorization timed out". A
+// stuck attempt is not something anyone can finish, so a retry replaces it.
+//
+// THE LINK THE CLI PRINTS IS A LOCAL FILE, not the authorize URL:
+//   If browser does not open, open this file in your browser: file:///C:/...
+//   /higgsfield-auth-XXXX/sign-in.html
+// That file is a meta-refresh to the real https authorize URL. The page cannot
+// link to a file:// path, so the https URL is read out of it and offered
+// instead - which is also what can be pasted into a private window when the
+// normal one is stuck on a stale Higgsfield session.
+let hfLogin = null, hfLoginChild = null;
+
+function authorizeUrlFromCliOutput(buf) {
+  const https = buf.match(/https:\/\/[^\s"']+/);
+  if (https) return https[0];
+  const file = buf.match(/file:\/\/\/?([^\s"']+sign-in\.html)/i);
+  if (!file) return null;
+  try {
+    const html = fs.readFileSync(decodeURIComponent(file[1]), 'utf8');
+    const m = html.match(/url=(https:\/\/[^"'>\s]+)/i) || html.match(/href="(https:\/\/[^"]+)"/i);
+    return m ? m[1].replace(/&amp;/g, '&') : null;
+  } catch (e) { return null; }
+}
+
+// SWITCHING ACCOUNT: ONLY THE PRIVATE WINDOW'S APPROVAL COUNTS.
+//
+// Opening a private window was not enough. The CLI always opens a NORMAL tab
+// too (it calls the OS directly; BROWSER is ignored - tested), and that tab,
+// still holding the old account's higgsfield.ai session, went through consent
+// and hit the callback on its own ten seconds later, long before anyone had
+// typed the new account into the private window. Measured from browser
+// history: every switch finished as the old account that way.
+//
+// So the callback is filtered. The CLI listens on 127.0.0.1 only, on its own
+// default port. NOT a port of our choosing: Higgsfield only accepts
+// pre-registered redirect URIs, and a random one came back as
+//   invalid_request: The 'redirect_uri' parameter does not match any of the
+//   OAuth 2.0 Client's pre-registered redirect urls
+// Chrome resolves `localhost` to ::1 FIRST (tested:
+// with both listening, every request went to ::1), so a gate on [::1]:port sees
+// both tabs' callbacks before the CLI does. The private window is opened at
+// /auth/private-start on this server, which gives it a one-time cookie before
+// sending it on to Higgsfield; localhost cookies are shared across ports
+// (tested), so its callback arrives carrying it. Only that callback is passed
+// through to the CLI. The normal tab's is answered with a page saying it was
+// ignored.
+const HF_DEFAULT_CALLBACK_PORT = 8765;   // what `hf auth login` uses and Higgsfield has registered
+
+const IGNORED_CALLBACK_HTML = '<!doctype html><meta charset="utf-8"><title>Ignored</title>'
+  + '<body style="font:15px system-ui;margin:48px;max-width:560px;line-height:1.5">'
+  + '<h2>This tab was ignored</h2><p>It is signed in to Higgsfield as the account you are switching '
+  + '<b>away from</b>, so the Tri-Wall Console did not use it.</p><p>Finish signing in in the '
+  + '<b>private window</b> the app opened, with the account you want. You can close this tab.</p>';
+
+async function startCallbackGate(nonce, port) {
+  {
+    const gate = http.createServer((req, res) => {
+      if (!req.url.startsWith('/callback')) { res.writeHead(404); return res.end(); }
+      const marked = (req.headers.cookie || '').split(/;\s*/).includes('hfswitch=' + nonce);
+      if (!marked) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(IGNORED_CALLBACK_HTML);
+      }
+      const up = http.get({ host: '127.0.0.1', port, path: req.url, headers: { host: 'localhost:' + port } }, r => {
+        res.writeHead(r.statusCode, r.headers); r.pipe(res);
+      });
+      up.on('error', e => { res.writeHead(502); res.end('Could not reach the Higgsfield CLI: ' + e.message); });
+    });
+    const ok = await new Promise(r => { gate.once('error', () => r(false)); gate.listen(port, '::1', () => r(true)); });
+    if (ok) return { port, gate };
+  }
+  return null;   // no IPv6 loopback on this machine, or ::1:port already taken
+}
+
+function callbackPortOf(authorizeUrl) {
+  try {
+    const ru = new URL(authorizeUrl).searchParams.get('redirect_uri');
+    return ru ? Number(new URL(ru).port) || 80 : null;
+  } catch (e) { return null; }
+}
+
+let hfLoginGate = null;
+
+// DEFUSING THE NORMAL TAB. The gate above makes the normal tab's approval
+// harmless, but the tab still came to the front showing the OLD account's
+// consent page with no way to pick another - which is what the operator saw
+// and reasonably took as "it forces me onto Gmail", while the private window
+// sat behind it. The CLI opens that tab by handing the OS a local
+// sign-in.html that meta-refreshes to Higgsfield, written under its temp dir.
+// So in switch mode the CLI gets a temp dir of our own, we watch it, and
+// rewrite sign-in.html the moment it appears: measured 61 ms after spawn, 9 ms
+// after the CLI printed the path, and Chrome loaded the rewritten page and
+// never went on to Higgsfield. The gate stays as the backstop if that race is
+// ever lost.
+const DEFUSED_SIGNIN_HTML = '<!doctype html><meta charset="utf-8"><title>Use the private window</title>'
+  + '<body style="font:15px system-ui;margin:48px;max-width:560px;line-height:1.5">'
+  + '<h2>Use the private window</h2><p>You are switching Higgsfield accounts. This normal tab is signed in '
+  + 'as the account you are switching <b>away from</b>, so the Tri-Wall Console has disabled it.</p>'
+  + '<p>Sign in in the <b>private (incognito) window</b> the app opened, with the account you want, and click '
+  + '<b>Allow</b>. You can close this tab.</p>';
+
+function defuseSignInPage(dir, onUrl) {
+  let done = false;
+  let w = null;
+  try {
+    w = fs.watch(dir, { recursive: true }, (ev, name) => {
+      if (done || !name || !/sign-in\.html$/i.test(String(name))) return;
+      const f = path.join(dir, String(name));
+      try {
+        const html = fs.readFileSync(f, 'utf8');
+        const m = html.match(/url=(https:\/\/[^"'>\s]+)/i);
+        if (!m) return;                        // not fully written yet - wait for the next event
+        onUrl(m[1].replace(/&amp;/g, '&'));
+        fs.writeFileSync(f, DEFUSED_SIGNIN_HTML);
+        done = true;
+        w.close();
+      } catch (e) { /* mid-write; the next event retries */ }
+    });
+  } catch (e) { return () => {}; }
+  return () => { try { w.close(); } catch (e) {} };
+}
+
+// `opts.privateWindow`: switch account - private window plus the callback
+// gate above. A plain Sign in does neither.
+async function beginHiggsfieldLogin(opts) {
+  const privateWindow = !!(opts && opts.privateWindow);
+  if (hfLoginChild) { try { hfLoginChild.kill(); } catch (e) {} hfLoginChild = null; }
+  if (hfLoginGate) { try { hfLoginGate.close(); } catch (e) {} hfLoginGate = null; }
+  hfLogin = { status: 'pending', url: null, message: 'Starting sign-in…',
+              account: null, workspace: null, startedAt: Date.now() };
+  const me = hfLogin;
+  let buf = '';
+
+  const args = ['auth', 'login'];
+  let gate = null, capturedUrl = null, stopDefuse = () => {}, authTmp = null;
+  const env = Object.assign({}, process.env);
+  if (privateWindow) {
+    authTmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'triwall-hfauth-'));
+    env.TEMP = authTmp; env.TMP = authTmp;
+    stopDefuse = defuseSignInPage(authTmp, u => { capturedUrl = u; });
+    me.switchNonce = crypto.randomBytes(16).toString('hex');
+    // Up before the CLI starts, on the port it will use - the normal tab can
+    // reach the callback within two seconds of the CLI opening it.
+    gate = await startCallbackGate(me.switchNonce, HF_DEFAULT_CALLBACK_PORT).catch(() => null);
+    if (gate) hfLoginGate = gate.gate;
+  }
+
+  const child = spawn(HIGGSFIELD_BIN, args,
+                      { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env });
+  hfLoginChild = child;
+  const scan = (chunk) => {
+    buf += String(chunk);
+    if (!me.url) {
+      // Once defused, the file no longer holds the URL - use the copy taken first.
+      const u = capturedUrl || authorizeUrlFromCliOutput(buf);
+      if (u) {
+        me.url = u;
+        me.message = 'Browser opened — approve the sign-in there.';
+        const cbPort = callbackPortOf(u);
+        if (privateWindow && gate && cbPort && cbPort !== gate.port) {
+          try { gate.gate.close(); } catch (e) {}
+          gate = null; hfLoginGate = null;
+          startCallbackGate(me.switchNonce, cbPort).then(g => {
+            if (g && me === hfLogin) { gate = g; hfLoginGate = g.gate; }
+          }).catch(() => {});
+        }
+        if (privateWindow) {
+          // Through /auth/private-start when gated, so the window gets its cookie.
+          const w = CONNECT.openPrivateWindow(gate
+            ? 'http://localhost:' + PORT + '/auth/private-start?n=' + me.switchNonce : u,
+            { delayMs: 1500 });   // after the normal tab, so the private window lands on top
+          me.message = !w.ok
+            ? 'Could not open a private window (' + w.error + '). Copy the sign-in link into one yourself.'
+            : gate
+              ? 'A ' + w.browser + ' window opened. Sign in there with the account you want and click Allow. '
+                + 'The normal tab that also opened says "Use the private window" — just close it.'
+              : 'A ' + w.browser + ' window opened, but this machine has no IPv6 loopback, so the normal '
+                + 'Higgsfield tab cannot be filtered out and may sign in as the old account first. Sign out '
+                + 'at higgsfield.ai in your normal browser, then try again.';
+        }
+      }
+    }
+  };
+  child.stdout.on('data', scan);
+  child.stderr.on('data', scan);
+  child.on('error', (e) => {
+    me.status = 'error';
+    me.message = 'Could not start the Higgsfield CLI: ' + e.message;
+  });
+  child.on('close', async (code) => {
+    if (hfLoginChild === child) hfLoginChild = null;
+    stopDefuse();
+    if (authTmp) { try { fs.rmSync(authTmp, { recursive: true, force: true }); } catch (e) {} }
+    if (gate) { try { gate.gate.close(); } catch (e) {} if (hfLoginGate === gate.gate) hfLoginGate = null; }
+    if (me !== hfLogin) return;              // replaced by a newer attempt
+    if (me.status === 'error') return;
+    if (code !== 0) {
+      me.status = 'error';
+      me.message = buf.trim().split(String.fromCharCode(10)).filter(Boolean).slice(-1)[0]
+                   || ('Sign-in exited with code ' + code);
+      return;
+    }
+    me.message = 'Signed in. Checking workspace…';
+    try {
+      const raw = await runCli(HIGGSFIELD_BIN, ['workspace', 'list', '--json']);
+      let list = [];
+      try { const j = JSON.parse(raw); list = Array.isArray(j) ? j : (j.items || j.data || []); }
+      catch (e) { list = []; }
+      const selected = list.find(w => w.selected || w.is_selected);
+      if (!selected && list.length === 1) {
+        const id = list[0].id || list[0].workspace_id;
+        if (id) await runCli(HIGGSFIELD_BIN, ['workspace', 'set', String(id)]);
+      }
+      const st = await runCli(HIGGSFIELD_BIN, ['workspace', 'status']).catch(() => '');
+      me.workspace = String(st || '').trim().split(String.fromCharCode(10))[0] || null;
+      if (!me.workspace && list.length > 1) {
+        me.message = 'Signed in, but this account has ' + list.length + ' workspaces and none is '
+                   + 'selected. Pick one with: higgsfield workspace set <id>';
+      }
+    } catch (e) { /* a workspace we could not read is reported below, not fatal */ }
+    try {
+      const acc = await runCli(HIGGSFIELD_BIN, ['account', 'status']);
+      me.account = String(acc || '').trim().split(String.fromCharCode(10))[0] || null;
+    } catch (e) { /* the account line is cosmetic */ }
+    me.status = 'ok';
+    if (!/workspaces and none/.test(me.message)) {
+      me.message = 'Signed in' + (me.account ? ' as ' + me.account : '') + '.';
+    }
+  });
+  return hfLogin;
 }
 
 function runCli(binary, args, stdinInput){
@@ -784,7 +1203,9 @@ async function pollJobUntilDone(jobId, maxWaitMs, intervalMs = 5000){
 // as a safety net against polling forever on a job Higgsfield lost track
 // of. Uses the same short-call-through-the-queue approach as
 // pollJobUntilDone, so it never blocks other CLI calls either.
-function pollJobInBackground(wall, mode, jobId){
+// `meta` fills the Library row (model, move, dials, note) the way the
+// foreground path would have, so a slow job is not recorded as anonymous.
+function pollJobInBackground(wall, mode, jobId, meta){
   const intervalMs = 10000;
   const maxIterations = Math.ceil(2 * 60 * 60 * 1000 / intervalMs);
   let i = 0;
@@ -799,7 +1220,7 @@ function pollJobInBackground(wall, mode, jobId){
         else { state.walls[wall].genVideoUrl = resultUrl; state.walls[wall].genVideoStatus = resultUrl ? 'completed' : 'failed'; }
         recordInLibrary(state, { at: new Date().toISOString(), wall, kind: mode,
                                url: state.walls[wall][mode === 'image' ? 'genImageUrl' : 'genVideoUrl'],
-                               model: null, move: null, scene: (state.scene || '').slice(0, 120) });
+                               model: null, move: null, scene: (state.scene || '').slice(0, 120), ...(meta || {}) });
         saveState();
         return;
       }
@@ -939,8 +1360,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/prompt') {
       const body = JSON.parse((await readBody(req)).toString('utf8'));
       const { wall, mode, text } = body;
-      if (!WALL_IDS.includes(wall) || !['image', 'video', 'edit'].includes(mode)) return sendJson(res, 400, { error: 'bad wall/mode' });
-      const field = mode === 'image' ? 'imagePrompt' : mode === 'video' ? 'videoPrompt' : 'editPrompt';
+      if (!WALL_IDS.includes(wall) || !['image', 'video', 'edit', 'videoedit'].includes(mode)) return sendJson(res, 400, { error: 'bad wall/mode' });
+      const field = mode === 'image' ? 'imagePrompt' : mode === 'video' ? 'videoPrompt'
+                  : mode === 'videoedit' ? 'videoEditPrompt' : 'editPrompt';
       // Only snapshot when a non-empty prompt is actually being replaced by
       // something different — otherwise every keystroke-save would flood the
       // history with near-identical records.
@@ -958,6 +1380,8 @@ const server = http.createServer(async (req, res) => {
       if (body.imageModel !== undefined) state.imageModel = body.imageModel;
       if (body.videoModel !== undefined) state.videoModel = body.videoModel;
       if (body.editModel !== undefined) state.editModel = body.editModel;
+      if (body.videoEditModel !== undefined) state.videoEditModel = body.videoEditModel;
+      if (body.imageSourceMode === 'image' || body.imageSourceMode === 'text') state.imageSourceMode = body.imageSourceMode;
       if (body.videoMotionMode !== undefined) state.videoMotionMode = body.videoMotionMode;
       if (body.videoCameraSpeedPct !== undefined) state.videoCameraSpeedPct = body.videoCameraSpeedPct;
       if (body.imageCompositionMode !== undefined) {
@@ -1004,17 +1428,27 @@ const server = http.createServer(async (req, res) => {
       const dest = path.join(UPLOADS_DIR, safeName);
       fs.writeFileSync(dest, Buffer.from(dataBase64, 'base64'));
       let clearedScene = false;
+      let archived = null;
       if (wall === 'center' && targetField === 'uploadedImagePath') {
         // Order matters: invalidate FIRST (it clears the stale approved centre
         // that would otherwise out-rank this upload), then record the new file.
-        if (centreReferenceChanged(dest)) { invalidateSceneForNewCentre(); clearedScene = true; }
+        if (centreReferenceChanged(dest)) {
+          // Shelve the outgoing trio before wiping it. This is the difference
+          // between "a new centre starts a new look" and "a new centre throws
+          // the last one away", which is what it used to do.
+          archived = archiveLiveSet('replaced by a new centre');
+          invalidateSceneForNewCentre();
+          state.liveSetId = null;
+          clearedScene = true;
+        }
       }
       state.walls[wall][targetField] = dest;
       saveState();
       if (wall === 'center' && targetField === 'uploadedImagePath') {
         refreshCentreGradeRef().catch(() => {});
       }
-      return sendJson(res, 200, { path: dest, url: `/uploads/${safeName}`, clearedScene });
+      return sendJson(res, 200, { path: dest, url: `/uploads/${safeName}`, clearedScene,
+                                  archivedSet: archived ? { id: archived.id, name: archived.name } : null });
     }
 
     // ---- generation (image or video, any model the CLI reports) ----
@@ -1056,8 +1490,8 @@ const server = http.createServer(async (req, res) => {
       // wall generated under one preset could be labelled with another if the
       // picker moved while it rendered - and a wall was, which made "the left
       // wall did not move" unreadable because the badge said C_TrackLeft.
-      const moveUsedForJob = require('./rigspec.js').normalise(
-        (LEARN.applyCalibration(state.calibration, state.rig || RIG.defaultRig()) || {}).intent);
+      const appliedForJob = LEARN.applyCalibration(state.calibration, state.rig || RIG.defaultRig()) || {};
+      const moveUsedForJob = require('./rigspec.js').normalise(appliedForJob.intent);
 
       const sendParams = Object.assign({}, params || {});
       if (sendParams.extension_mode && sendParams.mode !== 'video_extension') {
@@ -1196,7 +1630,12 @@ const server = http.createServer(async (req, res) => {
           // and keep polling in the background so state.json (and the
           // page, next time it syncs) picks up the real outcome once the
           // job actually finishes, with no further action needed here.
-          pollJobInBackground(wall, mode, jobId);
+          pollJobInBackground(wall, mode, jobId, {
+            model: jst, move: mode === 'video' ? moveUsedForJob : null,
+            speedPct: mode === 'video' ? appliedForJob.speedPct : null,
+            centrePct: mode === 'video' ? (appliedForJob.centrePct || 100) : null,
+            durationSec: (params || {}).duration || null, resolution: (params || {}).resolution || null,
+          });
           return sendJson(res, 200, { url: null, job, jobId, timedOut: true, moveUsed: moveUsedForJob,
             note: `Still rendering on Higgsfield past our own check-in window — normal for 4K video. Status will update to completed/failed automatically once it finishes; click "Sync from chat" or reload to check.` });
         }
@@ -1206,6 +1645,11 @@ const server = http.createServer(async (req, res) => {
           recordInLibrary(state, {
             at: new Date().toISOString(), wall, kind: mode, url: resultUrl,
             model: jst, move: mode === 'video' ? moveUsedForJob : null,
+            // The dials this clip's contract was written with, so Check
+            // against preset can measure it against ITS ask, not whatever the
+            // dials say by the time someone presses the button.
+            speedPct: mode === 'video' ? appliedForJob.speedPct : null,
+            centrePct: mode === 'video' ? (appliedForJob.centrePct || 100) : null,
             durationSec: (params || {}).duration || null,
             resolution: (params || {}).resolution || null,
             scene: (state.scene || '').slice(0, 120),
@@ -1237,9 +1681,10 @@ const server = http.createServer(async (req, res) => {
     // wording below stays generic ("an AI image/video generator").
     if (req.method === 'POST' && p === '/api/improve-prompt') {
       const body = JSON.parse((await readBody(req)).toString('utf8'));
-      const { wall, mode, currentPrompt, scene, compositionMode } = body;
+      const { wall, mode, currentPrompt, compositionMode } = body;
+      const scene = sceneInUse(body.scene);
       let { imagePath } = body;
-      if (!WALL_IDS.includes(wall) || !['image', 'video', 'edit'].includes(mode)) return sendJson(res, 400, { error: 'bad wall/mode' });
+      if (!WALL_IDS.includes(wall) || !['image', 'video', 'edit', 'videoedit'].includes(mode)) return sendJson(res, 400, { error: 'bad wall/mode' });
 
       // REFUSE RATHER THAN INVENT. A side wall's description is, by definition,
       // derived from the centre image. With no readable centre the bot still
@@ -1270,6 +1715,15 @@ const server = http.createServer(async (req, res) => {
         imagePath = await resolveWallLocalImagePath(wall);
         if (!imagePath) return sendJson(res, 400, { error: `${wall} has no image yet — generate or upload one first` });
       }
+      // 'videoedit' works on the wall's finished CLIP. The writer cannot watch
+      // a video, so it is shown one frame from a second in - past any first-
+      // frame hold, still close enough to the start to show what is in shot.
+      if (mode === 'videoedit') {
+        const clip = await resolveWallLocalVideoPath(wall);
+        if (!clip) return sendJson(res, 400, { error: `${wall} has no finished clip yet — generate its video first` });
+        imagePath = path.join(path.dirname(clip), path.basename(clip, path.extname(clip)) + '-frame.png');
+        await runFfmpeg(['-y', '-ss', '1', '-i', clip, '-frames:v', '1', imagePath]);
+      }
 
       const imageNote = imagePath
         ? `\n\nThe reference image for this wall is at: ${imagePath}\nUse the Read tool to look at it, and make sure the text accurately reflects what's actually visible there (setting, objects, lighting, style) rather than inventing unrelated content.`
@@ -1284,6 +1738,20 @@ const server = http.createServer(async (req, res) => {
         // about what the locked block says is derived from the current rig
         // intent, not hardcoded to a forward push.
         instruction = buildVideoInstruction(wall, currentPrompt, scene, imagePath, await allWallImages());
+      } else if (mode === 'videoedit') {
+        // Video counterpart of 'edit' below: ONE small change to a finished
+        // clip, run through a video-EDITING model. A separate locked note
+        // (VIDEO_EDIT_LOCK_NOTE in index.html) already tells the editor to
+        // keep every frame's movement and timing, so this only names the one
+        // change. It must not mention motion at all - the contract governs
+        // that, and a second opinion here is how walls drift apart.
+        instruction = `You are refining a SMALL, TARGETED edit instruction for an AI video-editing tool that will modify ONE existing video clip in a synchronized multi-wall composition — remove or add exactly one small thing, for the whole length of the clip, nothing more. A separate fixed instruction (not shown to you) already tells the editor to leave everything else exactly as it is — how the picture moves, its timing, framing, lighting, palette, and every object not mentioned — so do not restate any of that, and do not describe any movement.
+
+The attached image is one frame from the clip. Look at it first.
+
+Current draft edit instruction: ${currentPrompt || `(empty — the user hasn't decided yet. Pick ONE small, plausible object visible in the frame to remove, OR ONE small, unobtrusive object to add that would plausibly belong in this exact setting — nothing that changes the composition, main subject, or mood. State clearly in "notes" that this was your own suggestion, not the user's request.)`}${imageNote}
+
+Write ONE clear, concrete, single-item instruction naming the specific object and, if there is more than one plausible candidate, enough detail to pick out the right one — e.g. "Remove the red sled leaning against the fence, just left of center, for the whole clip." Do not describe the whole scene, do not request lighting/style/mood changes, do not bundle more than one change. Put ONLY that instruction in "improved_prompt", ending on a complete sentence — no preamble, no meta-commentary. If the draft is ambiguous or you made the suggestion yourself, put AT MOST one short sentence in "notes" — leave "notes" empty otherwise. Prioritize finishing "improved_prompt" completely over writing "notes" at all.`;
       } else if (mode === 'edit') {
         // This is the "Refine image" section — a small touch-up pass on a
         // wall's already-almost-right image (remove/add ONE small object),
@@ -1428,7 +1896,12 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       const RIGSPEC = require('./rigspec.js');
       const moveId = RIGSPEC.normalise(state.rig && state.rig.intent);
       const dur = (state.rig && state.rig.durationSec) || 5;
-      const out = { move: moveId, durationSec: dur, walls: {}, verdict: 'unknown', notes: [] };
+      // The numbers the prompt was actually written with - the speed dial
+      // after calibration, and the centre trim. Leaving them out compared
+      // every clip against 100% with no trim, whatever the dials said.
+      const applied = LEARN.applyCalibration(state.calibration, state.rig || RIG.defaultRig()) || {};
+      const out = { move: moveId, durationSec: dur, walls: {}, verdict: 'unknown', notes: [],
+                    speedPct: applied.speedPct, centrePct: applied.centrePct };
 
       for (const w of WALL_IDS) {
         const url = state.walls[w].genVideoUrl;
@@ -1456,17 +1929,76 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
         // length asked for. Compare TOTALS, which is what transfers between
         // clip lengths - comparing per-second rates is what made the old
         // check call a correct five-second clip "too weak".
-        const row = RIGSPEC.compare(moveId, w, got);
+        // Prefer the dials this clip was generated under (recorded in the
+        // Library since this change); older clips fall back to the current ones.
+        const rec = (state.library || []).find(r => r.url === state.walls[w].genVideoUrl) || {};
+        const sp = rec.speedPct || applied.speedPct;
+        const cp = rec.centrePct || applied.centrePct;
+        // GRADE EACH CLIP AGAINST THE MOVE IT WAS MADE UNDER, not against
+        // whatever the dropdown says now. This was measured on 2026-09-23: a
+        // C_PushOut set was graded against C_PushIn because the preset had been
+        // switched back afterwards, and the verdict came out exactly inverted -
+        // the two walls that had obeyed were reported "travelling the WRONG
+        // WAY" and "zooming the WRONG WAY", and the one wall that really had
+        // performed a push in was passed as correct. The Library has recorded
+        // the move per clip all along; nothing was reading it.
+        const mv = RIGSPEC.normalise(rec.move || moveId);
+        const row = RIGSPEC.compare(mv, w, got, sp, cp);
+        row.move = mv;
+        row.moveFrom = rec.move ? 'generation' : 'current';
+        row.dialsFrom = rec.speedPct ? 'generation' : 'current';
+        if (w === 'center') out.centrePct = cp || 100;
         cmp.push(row);
       }
       out.comparison = cmp;
+      // Say so plainly when the clips on the wall are not the preset that is
+      // selected now. Silently grading them against the dropdown is what
+      // produced an inverted verdict nobody could argue with.
+      const graded = Array.from(new Set(cmp.map(r => r.move))).filter(Boolean);
+      if (graded.length) {
+        out.gradedAgainst = graded.length === 1 ? graded[0] : graded;
+        if (graded.length > 1) {
+          out.notes.push('These clips were not all generated under the same preset ('
+            + cmp.map(r => r.wall.toUpperCase() + ' = ' + r.move).join(', ')
+            + '). Each is graded against its own, but they will not stitch as one move.');
+        } else if (graded[0] !== moveId) {
+          out.notes.push('The preset selected now is ' + moveId + ', but these clips were generated '
+            + 'under ' + graded[0] + '. They are graded against ' + graded[0] + ' - what they were '
+            + 'actually asked to do.');
+        }
+      }
+      if (cmp.some(r => r.dialsFrom === 'current')) {
+        out.notes.push('Some clips predate dial recording and are compared against the CURRENT speed '
+                     + '(' + applied.speedPct + '%) - if the dial has moved since they were made, their '
+                     + 'distance figures are off by that ratio. The centre-pace check is a ratio between '
+                     + 'walls and is unaffected.');
+      }
+      // THE ELEMENT EATS THE CAMERA MOVE. Measured 2026-09-23 on the first set
+      // generated with a travelling element actually reaching the contract:
+      // both side walls collapsed to dx 0.09 and 0.08 against an ask of 0.43,
+      // the left wall's background ratio fell to 0.28 (a static plate), and the
+      // owls flew across anyway. Given something to animate, the generator
+      // animates it and leaves the plate alone. Worth naming, because the
+      // obvious reading of "the sides barely moved" is that the speed dial is
+      // wrong, and it is not - the same dial moved them before.
+      const elOn = !!(state.rig && state.rig.element && state.rig.element.enabled
+                      && state.rig.element.subject);
+      const sideRows = cmp.filter(r => r.wall !== 'center' && r.dx && r.dx.ratio > 0);
+      if (elOn && sideRows.length === 2 && sideRows.every(r => r.dx.ratio < 0.5)) {
+        out.notes.push('Both side walls came in under half the asked-for travel while a travelling '
+          + 'element was in the contract. Given an object to animate, the generator has repeatedly '
+          + 'spent the motion on the object and left the plate nearly still. Test the camera on its '
+          + 'own first - remove the element, get the move measuring right, then put it back.');
+      }
+      out.pace = RIGSPEC.paceMatch(cmp, out.centrePct);
+      if (out.pace && !out.pace.matched) out.notes.push(out.pace.note);
 
       const bad = cmp.filter(c => c.problems.length);
       if (!cmp.length) { out.verdict = 'unknown'; out.notes.push('Nothing measurable yet - generate a set first.'); }
       else if (!bad.length) {
         out.verdict = 'match';
         out.notes.push('All ' + cmp.length + ' measured wall' + (cmp.length === 1 ? '' : 's') + ' perform '
-          + moveId + ' within tolerance: direction, distance travelled, scale change and roll all agree '
+          + (out.gradedAgainst || moveId) + ' within tolerance: direction, distance travelled, scale change and roll all agree '
           + 'with the preset.');
       } else {
         out.verdict = bad.some(c => c.problems.some(t => /WRONG WAY|static plate/.test(t))) ? 'mismatch' : 'off-spec';
@@ -1500,7 +2032,16 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       const applied = LEARN.applyCalibration(state.calibration, state.rig || RIG.defaultRig());
       const moveId = RIGSPEC.normalise(applied.intent);
       const sp = RIGSPEC.spec(moveId, wall, applied.durationSec || 5);
-      if (Math.abs(sp.dxTotal) < 0.01 && Math.abs(sp.scaleTotal - 1) < 0.01) {
+      // THE END FRAME IS BUILT FROM THE ROOM'S FIGURES, NOT FROM THE ASK.
+      // On the right wall the contract deliberately asks for the reverse of what
+      // the room wants, because the generator reverses it (see DELIVERY_SIGN in
+      // rigspec.js). Nothing reverses an end frame: it is a real image warped by
+      // a real amount and handed over as an interpolation target. Feeding it the
+      // inverted ask would warp the plate backwards and break the one lever that
+      // does not argue back.
+      const lockDx = sp.dxDelivered;
+      const lockScaleRaw = sp.scaleDelivered;
+      if (Math.abs(lockDx) < 0.01 && Math.abs(lockScaleRaw - 1) < 0.01) {
         return sendJson(res, 400, { error:
           moveId + ' does not move this wall, so there is no end frame to build.' });
       }
@@ -1511,7 +2052,7 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       // 1.00, 1.00, 1.00, 0.95, 0.50, 0.49, 0.30 across the clip. A start/end
       // pair is a strong lever for a TRANSLATION and a bad one for a dolly,
       // where the in-between is the whole shot.
-      if (Math.abs(sp.dxTotal) < 0.05 && !body.force) {
+      if (Math.abs(lockDx) < 0.05 && !body.force) {
         return sendJson(res, 400, { error:
           'This move is a dolly on the ' + wall + ' wall, not a slide, and locking a dolly to a '
           + 'start/end pair made it hold the first frame and jump to the last. Leave this wall '
@@ -1529,14 +2070,14 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       // residual under 15% is reported as scale_end 1.0 in the JSON (and the
       // negatives then say "No zoom"), so warping the end frame by 0.91 would
       // hand the generator a target its own instructions forbid.
-      const lockScale = Math.abs(sp.scaleTotal - 1) >= 0.15 ? sp.scaleTotal : 1.0;
+      const lockScale = Math.abs(lockScaleRaw - 1) >= 0.15 ? lockScaleRaw : 1.0;
 
       const out = path.join(UPLOADS_DIR, wall + '-endframe-' + Date.now() + '.png');
       let info;
       try {
         const raw = await new Promise((resolve, reject) => {
           const child = spawn(PYTHON_BIN, [path.join(APP_DIR, 'make_end_frame.py'), src, out,
-                                           '--dx', String(sp.dxTotal), '--scale', String(lockScale)],
+                                           '--dx', String(lockDx), '--scale', String(lockScale)],
                               { stdio: ['ignore', 'pipe', 'pipe'] });
           let o = '', e = '';
           child.stdout.on('data', d => o += d);
@@ -1556,7 +2097,7 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
         ok: true, move: moveId, wall: wall,
         startFrame: '/uploads/' + path.basename(src),
         endFrame: '/uploads/' + path.basename(out),
-        dxTotal: sp.dxTotal, scaleTotal: lockScale,
+        dxTotal: lockDx, scaleTotal: lockScale,
         revealedBandPx: info.revealed_band_px, revealedAt: info.revealed_at,
         note: 'The revealed band is a streak of the edge colours, not invented content - it carries '
             + 'the floor line, skirting and horizon at their true heights and leaves the detail to '
@@ -1632,6 +2173,74 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       }
       saveState();
       return sendJson(res, 200, { ok: true, rig: state.rig });
+    }
+
+    // ---- the image sets shelf ----
+    if (req.method === 'GET' && p === '/api/image-sets') {
+      return sendJson(res, 200, { sets: state.imageSets || [], liveSetId: state.liveSetId || null,
+                                  max: IMAGE_SETS_MAX });
+    }
+
+    // Save the trio currently on the walls. With no live set this files a new
+    // one; with a live set it updates it in place, so pressing Save twice does
+    // not produce two near-identical rows.
+    if (req.method === 'POST' && p === '/api/image-set-save') {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      if (!liveSetHasContent()) {
+        return sendJson(res, 400, { error: 'Nothing to save yet - no picture or description on any wall.' });
+      }
+      const entry = archiveLiveSet('saved by hand');
+      if (body.name && String(body.name).trim()) entry.name = String(body.name).trim().slice(0, 80);
+      state.liveSetId = entry.id;
+      saveState();
+      return sendJson(res, 200, { set: entry, liveSetId: state.liveSetId });
+    }
+
+    // Start a fresh trio WITHOUT destroying the current one.
+    if (req.method === 'POST' && p === '/api/image-set-new') {
+      const archived = archiveLiveSet('starting a new set');
+      invalidateSceneForNewCentre();
+      // invalidateSceneForNewCentre does NOT clear the centre's own
+      // uploadedImagePath - its only other caller overwrites that field on the
+      // very next line, so it never had to. Here nothing replaces it, and
+      // leaving it behind meant the walls still looked occupied: the next
+      // archiveLiveSet() saw content and filed a junk set. Clear it here.
+      state.walls.center.uploadedImagePath = null;
+      state.scene = '';
+      state.centreRefHash = null;
+      state.liveSetId = null;
+      saveState();
+      return sendJson(res, 200, { ok: true,
+        archivedSet: archived ? { id: archived.id, name: archived.name } : null });
+    }
+
+    if (req.method === 'POST' && p === '/api/image-set-load') {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      const set = loadImageSet(body.id);
+      if (!set) return sendJson(res, 404, { error: 'No such set.' });
+      saveState();
+      return sendJson(res, 200, { set, liveSetId: state.liveSetId });
+    }
+
+    if (req.method === 'POST' && p === '/api/image-set-rename') {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      const set = (state.imageSets || []).find(x => x.id === body.id);
+      if (!set) return sendJson(res, 404, { error: 'No such set.' });
+      set.name = String(body.name || '').trim().slice(0, 80) || set.name;
+      saveState();
+      return sendJson(res, 200, { set });
+    }
+
+    // Drops the row only. The pictures stay in uploads/ - nothing in this tool
+    // deletes from there - so a set removed by accident has lost its grouping
+    // and its text, not its images.
+    if (req.method === 'POST' && p === '/api/image-set-delete') {
+      const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+      const before = (state.imageSets || []).length;
+      state.imageSets = (state.imageSets || []).filter(x => x.id !== body.id);
+      if (state.liveSetId === body.id) state.liveSetId = null;
+      saveState();
+      return sendJson(res, 200, { ok: true, removed: before - state.imageSets.length });
     }
 
     if (req.method === 'GET' && p === '/api/library') {
@@ -1934,9 +2543,15 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       // reference hash and the measured grade lock.
       const keptHistory = state.history;
       const keptCalibration = state.calibration;
+      // The shelf survives too, for the same reason the rating history does:
+      // saved sets are accumulated work, not part of "this picture". A reset
+      // that emptied the shelf would make it useless as a place to put things.
+      archiveLiveSet('before reset');
+      const keptSets = state.imageSets;
       state = defaultState();
       state.history = keptHistory;
       state.calibration = keptCalibration;
+      state.imageSets = keptSets;
       state.centreRefHash = null;
       saveState();
       return sendJson(res, 200, { ok: true });
@@ -1974,17 +2589,21 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       const dest = path.join(UPLOADS_DIR, `${wall}-approved-${Date.now()}${ext}`);
       await downloadFile(url, dest);
       let clearedScene = false;
+      let archived = null;
       if (wall === 'center' && centreReferenceChanged(dest)) {
         // Approving a NEW centre generation retires the previous picture's
         // sides, for the same reason an upload does — but the centre's own
         // description is what produced this image, so it stays.
+        archived = archiveLiveSet('replaced by a new centre');
         invalidateSidesForNewCentre();
+        state.liveSetId = null;
         clearedScene = true;
       }
       state.walls[wall].approvedImagePath = dest;
       saveState();
       if (wall === 'center') { refreshCentreGradeRef().catch(() => {}); }
-      return sendJson(res, 200, { path: dest, clearedScene });
+      return sendJson(res, 200, { path: dest, clearedScene,
+                                  archivedSet: archived ? { id: archived.id, name: archived.name } : null });
     }
 
     // ---- Refine image: small, targeted remove/add-one-thing edits ----
@@ -2046,17 +2665,104 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
         }
 
         if (!resultUrl && timedOut) {
-          pollJobInBackground(wall, 'image', jobId);
+          pollJobInBackground(wall, 'image', jobId, { model: jst, note: 'refinement edit' });
           return sendJson(res, 200, { url: null, jobId, timedOut: true,
             note: 'Still rendering on Higgsfield past the wait budget — status will update automatically once it finishes.' });
         }
 
         state.walls[wall].genImageUrl = resultUrl;
         state.walls[wall].genImageStatus = resultUrl ? 'completed' : 'failed';
+        if (resultUrl) {
+          recordInLibrary(state, {
+            at: new Date().toISOString(), wall, kind: 'image', url: resultUrl,
+            model: jst, move: null, scene: (state.scene || '').slice(0, 120), note: 'refinement edit',
+          });
+        }
         saveState();
-        return sendJson(res, 200, { url: resultUrl, job, moveUsed: moveUsedForJob });
+        // No moveUsed here: that const lives in /api/generate's scope, and
+        // naming it threw a ReferenceError AFTER the new URL was saved - the
+        // catch below then marked the wall 'failed' and the page never
+        // redrew, so every successful edit looked like it had not happened.
+        return sendJson(res, 200, { url: resultUrl, job });
       } catch (err) {
         state.walls[wall].genImageStatus = 'failed';
+        saveState();
+        return sendJson(res, 500, { error: err.message });
+      }
+    }
+
+    // ---- Refine video: the same one-small-change edit, on a finished clip ----
+    //
+    // Mirrors /api/edit-image. The wall's CURRENT clip goes to a video-EDITING
+    // model (#videoEditModelSelect - kling_video_edit, flux_3_video_edit, or
+    // whatever the catalogue offers with a `video_references` input) and the
+    // result replaces genVideoUrl in place, so the Video card, Play all and
+    // Check against preset all see it with no new state shape. Chains the same
+    // way: a second edit edits the first one's result.
+    if (req.method === 'POST' && p === '/api/edit-video') {
+      const body = JSON.parse((await readBody(req)).toString('utf8'));
+      const { wall, jst, prompt, params } = body;
+      if (!WALL_IDS.includes(wall)) return sendJson(res, 400, { error: 'bad wall' });
+
+      const clipPath = await resolveWallLocalVideoPath(wall);
+      if (!clipPath) return sendJson(res, 400, { error: `${wall} has no finished clip yet to edit — generate its video first` });
+
+      // The pre-edit clip is only recoverable if it is snapshotted first.
+      LEARN.snapshotWall(state.history, wall, state.walls[wall], 'pre-video-edit', {
+        sceneKey: state.centreRefHash,
+        model: jst, promptSubmitted: prompt,
+      });
+      // An edit keeps the source clip's motion, so it keeps its preset label.
+      const src = (state.library || []).find(r => r.url === state.walls[wall].genVideoUrl);
+
+      const args = ['generate', 'create', jst, '--prompt', cliPromptArg(prompt)];
+      Object.entries(params || {}).forEach(([k, v]) => {
+        if (v === '' || v === null || v === undefined) return;
+        args.push(`--${k}`, String(v));
+      });
+      args.push('--video-references', clipPath, '--json');
+
+      state.walls[wall].genVideoStatus = 'running';
+      saveState();
+
+      try {
+        const createRaw = await runCli(HIGGSFIELD_BIN, args);
+        const createdParsed = JSON.parse(createRaw);
+        const createdItem = Array.isArray(createdParsed) ? createdParsed[0] : createdParsed;
+        const jobId = typeof createdItem === 'string' ? createdItem : createdItem?.id;
+        if (!jobId) throw new Error(`Higgsfield didn't return a job id: ${createRaw.slice(0, 300)}`);
+        const createdStatus = typeof createdItem === 'object' ? createdItem?.status : undefined;
+
+        let resultUrl = jobResultUrl(createdItem), job = createdItem, timedOut = false;
+        if (!TERMINAL_STATUSES.includes(createdStatus)) {
+          ({ url: resultUrl, job, timedOut } = await pollJobUntilDone(jobId, 25 * 60 * 1000));
+        }
+
+        if (!resultUrl && timedOut) {
+          pollJobInBackground(wall, 'video', jobId, {
+            model: jst, move: src ? src.move : null, note: 'refinement edit',
+            speedPct: src ? src.speedPct : null, centrePct: src ? src.centrePct : null,
+            durationSec: src ? src.durationSec : null, resolution: src ? src.resolution : null,
+          });
+          return sendJson(res, 200, { url: null, jobId, timedOut: true,
+            note: 'Still rendering on Higgsfield past the wait budget — this page will pick it up automatically once it finishes.' });
+        }
+
+        state.walls[wall].genVideoUrl = resultUrl;
+        state.walls[wall].genVideoStatus = resultUrl ? 'completed' : 'failed';
+        if (resultUrl) {
+          recordInLibrary(state, {
+            at: new Date().toISOString(), wall, kind: 'video', url: resultUrl,
+            model: jst, move: src ? src.move : null,
+            speedPct: src ? src.speedPct : null, centrePct: src ? src.centrePct : null,
+            durationSec: src ? src.durationSec : null, resolution: src ? src.resolution : null,
+            scene: (state.scene || '').slice(0, 120), note: 'refinement edit',
+          });
+        }
+        saveState();
+        return sendJson(res, 200, { url: resultUrl, job, moveUsed: src ? src.move : null });
+      } catch (err) {
+        state.walls[wall].genVideoStatus = 'failed';
         saveState();
         return sendJson(res, 500, { error: err.message });
       }
@@ -2231,21 +2937,70 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       return sendJson(res, 200, r);
     }
 
-    // Hands sign-in to the vendor's own CLI in a terminal the person can see.
+    // Hands sign-in to the vendor's own CLI. Higgsfield runs in-process and
+    // goes straight to the browser (see beginHiggsfieldLogin); `claude` is an
+    // interactive REPL, so it still needs a terminal of its own.
+    //
     // This app never takes a password, key or token in any field, and never
     // reads one — the CLI writes its own session file under the user's home.
     if (req.method === 'POST' && p === '/api/auth/login') {
       const body = JSON.parse((await readBody(req)).toString('utf8'));
       const which = body.which === 'claude' ? 'claude' : 'higgsfield';
+      if (which === 'higgsfield') {
+        // Switching account: drop the current token first, so a sign-in that
+        // is abandoned half way does not leave the old account quietly active.
+        if (body.switchAccount && HIGGSFIELD_RESOLVED) CONNECT.authLogout(HIGGSFIELD_BIN);
+        const st = await beginHiggsfieldLogin({ privateWindow: !!body.switchAccount });
+        return sendJson(res, 200, { ok: true, inBrowser: true, status: st.status,
+                                    url: st.url, note: st.message });
+      }
       const r = PRE.openLoginTerminal(which, { higgsfield: HIGGSFIELD_BIN });
       return sendJson(res, r.ok ? 200 : 500, r);
+    }
+
+    // The switch-account private window lands here first - see startCallbackGate.
+    if (req.method === 'GET' && p === '/auth/private-start') {
+      const n = url.searchParams.get('n') || '';
+      if (!hfLogin || hfLogin.status !== 'pending' || !hfLogin.switchNonce
+          || n !== hfLogin.switchNonce || !hfLogin.url) {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('This sign-in link has expired. Click Switch account in the Tri-Wall Console again.');
+      }
+      res.writeHead(302, { 'Set-Cookie': 'hfswitch=' + n + '; Path=/; HttpOnly; SameSite=Lax',
+                           'Location': hfLogin.url });
+      return res.end();
+    }
+
+    // Polled by the page while the browser tab is open.
+    if (req.method === 'GET' && p === '/api/auth/login-status') {
+      const st = hfLogin || { status: 'idle', message: 'No sign-in in progress.' };
+      return sendJson(res, 200, {
+        status: st.status, url: st.url || null, note: st.message || '',
+        account: st.account || null, workspace: st.workspace || null,
+      });
     }
 
     // ---- rig spec: one camera intent, all three walls derived from it ----
     if (req.method === 'POST' && p === '/api/rig') {
       const body = JSON.parse((await readBody(req)).toString('utf8'));
+      // THE ELEMENT'S UPLOADED PICTURE MUST SURVIVE A FORM PUSH.
+      //
+      // `refPath` is written by /api/element-ref and is owned by the server —
+      // the page never sends it back, because readRigFromForm only knows about
+      // the boxes on screen (enabled, subject, direction, rate, perWall, entry).
+      // The whole rig object it sends therefore contains an `element` with NO
+      // refPath, and Object.assign REPLACES a nested object wholesale rather
+      // than merging into it. So uploading the element picture worked, and then
+      // touching any rig control at all — speed, duration, even the subject box
+      // the element itself needs — silently wiped the path. The file stayed on
+      // disk; the tool just forgot where it was, and generate() then saw no
+      // refPath and attached nothing.
+      const keptRef = (state.rig && state.rig.element && state.rig.element.refPath) || null;
       state.rig = Object.assign(state.rig || RIG.defaultRig(), body.rig || body);
       if (body.element) state.rig.element = Object.assign(state.rig.element || {}, body.element);
+      if (state.rig.element && !state.rig.element.refPath && keptRef) {
+        state.rig.element.refPath = keptRef;
+      }
       // Keep the legacy field in sync so anything still reading it behaves.
       state.videoMotionMode = state.rig.intent === 'hold' ? 'idle' : 'moving';
       saveState();
@@ -2253,6 +3008,7 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       return sendJson(res, 200, {
         ok: true, rig: state.rig, applied,
         summary: RIG.describeRig(applied),
+        elementPlan: elementPlan(applied),
         // `rules` - the same contract as prose - used to ride along here at
         // 18KB per response. Nothing rendered it once the contract became
         // JSON, and the one thing that still read it (the inspector's "has
@@ -2269,6 +3025,7 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       const applied = LEARN.applyCalibration(state.calibration, state.rig || RIG.defaultRig());
       return sendJson(res, 200, {
         rig: state.rig, applied, summary: RIG.describeRig(applied),
+        elementPlan: elementPlan(applied),
         targets: RIG.RIG_TARGETS, geometry: RIG.RIG_GEOMETRY, intents: RIG.INTENTS,
         locks: rigLockPayload(applied),
         // `rules` - the same contract as prose - used to ride along here at
@@ -2501,6 +3258,7 @@ Put ONLY that description in "improved_prompt", in full, ending on a complete se
       LEARN.snapshotWall(state.history, wall, state.walls[wall], 'restore-point', { sceneKey: state.centreRefHash });
       Object.assign(state.walls[wall], {
         imagePrompt: v.imagePrompt || '', videoPrompt: v.videoPrompt || '', editPrompt: v.editPrompt || '',
+        videoEditPrompt: v.videoEditPrompt || '',
         genImageUrl: v.genImageUrl || null, genVideoUrl: v.genVideoUrl || null,
         approvedImagePath: v.approvedImagePath || null, uploadedImagePath: v.uploadedImagePath || null,
         genImageStatus: v.genImageUrl ? 'completed' : null,

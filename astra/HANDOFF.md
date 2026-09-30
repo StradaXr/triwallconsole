@@ -1,5 +1,12 @@
 # Tri-Wall Astra — Codex handoff
 
+Integration update: `codex/astra-main-ui` combines the Astra implementation
+with `origin/main` at `1387c98`. Astra inherits main's shared visual theme and
+fonts, adds its light/dark switch, and keeps the Codex image workflow and
+Remove buttons. The Strada logo remains absent from Astra. The notes below
+describe the earlier handoff; live state and Git status supersede its scene,
+branch and uncommitted-work descriptions.
+
 Updated September 30, 2026. This is a project continuity note, not a request to
 generate, change, publish, or spend anything automatically.
 

@@ -85,6 +85,19 @@ const WALL_H = { left: 1600, center: 1920, right: 1600 };
 // room has nearer objects), not rig behaviour. Raw readings sit in the comment
 // beside each line so nothing is hidden.
 const MOVES = {
+  // RIGHT WALL DIRECTION: OWNER-CONFIRMED TWICE, FROM DELIVERED OUTPUT.
+  // 2026-09-23, first after the direction rewrite ("right motion is fixed, it's
+  // looking nice for push in"), then again off a later clip that travelled
+  // toward frame RIGHT (measured dx +0.083 over 5.04s): "this is a good
+  // generation for C_PushIn ... make sure the camera motion for right wall does
+  // what it's doing right now when C_PushIn is selected."
+  //
+  // The table below ALREADY says that - right: dx +0.61, i.e. toward frame
+  // RIGHT, toward the outer end of the room - so nothing here needed changing;
+  // it is recorded so that it does not get "fixed" later. The amplitude is a
+  // separate question and is NOT taken from that clip: +0.083 is 19% of the
+  // 0.428 the contract asked for, and shrinking the preset to match a delivery
+  // that undershot would bake the undershoot in permanently.
   C_PushIn: {
     label: 'C_PushIn — the rig travels forward into the room',
     refClip: 'C_PushIn.mp4', refDur: 1.93,
@@ -96,6 +109,15 @@ const MOVES = {
       right:  { dx: +0.61, dy: 0, scale: 1.10, roll: 0 },
     },
   },
+  // AND C_PushOut IS ITS EXACT REVERSE, which is what the table says (left
+  // +0.61, right -0.61 - each side mirrored against push-in) and what the owner
+  // asked for: "C_PushOut should be the opposite of how the camera is moving."
+  // The RIGHT wall has not delivered it yet. Three measured attempts, all
+  // travelling toward frame RIGHT when asked for LEFT: +0.233, then +0.083
+  // after direction_check replaced the depth-based wording. The rewrite took the
+  // wrong-way magnitude down but did not turn it round, so prompting is not the
+  // lever here - compare() now points at Lock motion for a wrong-way wall, the
+  // same advice it already gave for one that barely moves.
   C_PushOut: {
     label: 'C_PushOut — the rig withdraws backward out of the room',
     refClip: 'C_PushOut.mp4', refDur: 1.83,
@@ -141,6 +163,43 @@ const MOVES = {
   },
 };
 
+// ------------------------------------------- THE RIGHT WALL IS INVERTED ---
+// THIS IS A COMPENSATION, NOT GEOMETRY. The table above is the room's real
+// behaviour and is not to be edited: looking right, "forward" is toward the
+// LEFT of that view, so a forward dolly streams the right wall's content toward
+// frame RIGHT (+0.61), the exact mirror of the left wall. That is correct and
+// stays correct.
+//
+// What is also true is that the generator does the opposite, every time, in
+// both directions. Measured on the right wall, four clips, two presets:
+//
+//     clip                     preset      asked      delivered
+//     R_bear_Pushin.mp4        C_PushIn    +0.4276     -0.1789
+//     R_Toronto_Pushout.mp4    C_PushOut   -0.4276     +0.0826
+//     19:40 Toronto set        C_PushOut   -0.4276     +0.0826
+//     18:52 Toronto set        C_PushOut   -0.4276     +0.2330
+//
+// Four for four, both signs, sign flipped every time. Three rounds of rewording
+// have moved the magnitude and never the sign - the last one took the wrong-way
+// travel from +0.233 to +0.083 and still did not turn it round. At that point
+// the honest thing is to stop arguing with it: ask the right wall for the
+// opposite of what the room wants and let the inversion deliver the right
+// answer. The owner asked for exactly this ("dont change the prompts just
+// launch the parameters inverse").
+//
+// TWO PLACES MUST NOT SEE THE INVERTED NUMBER:
+//   * compare(), which grades a finished clip - the clip should MEASURE the
+//     room's geometry, so it is graded against dxDelivered, not the ask; and
+//   * the motion-lock end frame, which warps the plate itself. A start/end pair
+//     is an interpolation between two real images, so nothing inverts it, and
+//     feeding it the inverted ask would break the one lever that works.
+// Both read the `*Delivered` fields. Everything the PROMPT is built from reads
+// the plain fields, so the contract is inverted whole and stays self-consistent.
+//
+// To retire this, set right back to +1 and measure a set. If the generator has
+// changed, the sign will come back on its own.
+const DELIVERY_SIGN = { left: +1, center: +1, right: -1 };
+
 // The house coherent-lateral-flow ceiling for the side walls, from the wall
 // brief's energy table: 6 px per frame at master resolution. Reported, never
 // silently applied — the reference gesture itself runs above it because it is a
@@ -184,6 +243,24 @@ const SAFE_PX_PER_FRAME = 6;
 // them raises the benchmark to 0.1222. The owner asked for all six averaged.)
 const BENCHMARK_DX_RATE = 0.0848;   // frame widths per second at Speed = 100%
 
+// THE CENTRE RUNS AT A QUARTER OF THE REFERENCE RATIO. This is the standard,
+// not a starting point, and it is set from delivered output rather than from
+// the nDisplay render.
+//
+// The reference render pairs a side dx of 0.61 view widths with a centre scale
+// of x2.00, and holding that ratio is what the gesture model does by default.
+// The generator does not honour it: over three delivered sets the sides tracked
+// what they were asked while the centre overshot its scale by 3-9x, and the
+// centre's delivered rate barely moved with the ask at all. A set built on the
+// raw reference ratio therefore lands as a fast centre between two slow sides,
+// every time, whatever the speed dial says.
+//
+// 25 was arrived at from the wall, by the owner, watching stitched output - "the
+// centre should be about 75% slower to match the sides". An earlier 65 was still
+// visibly too fast. The Centre % box overrides it per scene; this is what it
+// starts at, and what a contract built without an explicit rig uses.
+const CENTRE_TRIM_DEFAULT = 25;     // percent, applied to the centre wall only
+
 // The theatre's own reference gesture runs much harder than that. This is the
 // side wall's rate in the SAME units, so SPEED_UNITY below is the honest
 // statement of how much gentler the operator's clips are: 100% on the dial is
@@ -218,6 +295,21 @@ function gestureFraction(speedPct, T) {
   const pct = (Number.isFinite(p) && p > 0 ? p : 100) / 100;
   return pct * BENCHMARK_DX_RATE * T / REF_SIDE_DX_TOTAL;
 }
+
+// HOW SMALL A SCALE CHANGE IS WORTH STATING, per wall.
+//
+// One flat 0.15 used to cover both, and trimming the centre exposed why that
+// is wrong. The centre's ONLY motion is scale - it is a dolly with dx = 0 - so
+// flattening a x1.117 push to "no size change" does not slow the centre down,
+// it switches the centre off, and the contract then actively says "no zoom, no
+// dolly, nothing gets bigger or smaller" on the one wall whose whole job is to
+// push. At 25% and 5 s that is exactly what happened.
+//
+// A side wall is the opposite case: its move is dx, its scale is incidental,
+// and a side wall that invents a zoom is a failure this project has measured
+// more than once (x0.58 against a contract that said 1.00). There the wide
+// deadzone is protection and it stays.
+function zoomDeadzone(wall) { return wall === 'center' ? 0.02 : 0.15; }
 
 function normalise(id) {
   if (id && MOVES[id]) return id;
@@ -279,16 +371,30 @@ function spec(moveId, wallId, durationSec, speedPct, centrePct) {
   // without touching the sides. It multiplies the gesture fraction, so it acts
   // on the centre's scale exponent and stays consistent at every duration.
   const cp = Number(centrePct);
-  const centreTrim = (w === 'center' && Number.isFinite(cp) && cp > 0) ? cp / 100 : 1;
+  const centreTrim = w === 'center'
+    ? ((Number.isFinite(cp) && cp > 0) ? cp : CENTRE_TRIM_DEFAULT) / 100
+    : 1;
   const g = gestureFraction(speedPct, T) * centreTrim;
-  const dxTotal = raw.dx * conv * g;
-  const dxRate = dxTotal / T;                       // frame-widths per second
-  const dyTotal = raw.dy * (MASTER_H / WALL_H[w]) * g;
 
+  // THE ROOM'S OWN FIGURES FIRST - what a correct finished clip must measure.
+  const dxDelivered = raw.dx * conv * g;
+  const dyDelivered = raw.dy * (MASTER_H / WALL_H[w]) * g;
   // Scale compounds, so it takes the gesture fraction as an exponent. Because
   // the two presets' raw scales are exact reciprocals (x2.00 and x0.50), so are
   // their results at any speed and any duration.
-  const scaleTotal = Math.pow(raw.scale, g);
+  const scaleDelivered = Math.pow(raw.scale, g);
+
+  // THEN THE ASK, which on the right wall is the opposite of it. See
+  // DELIVERY_SIGN above: four measured clips, two presets, sign flipped every
+  // time, so the ask is flipped to compensate. Applying it as a multiplier on
+  // dx and as a sign on the scale EXPONENT keeps the inverted ask an exact
+  // reciprocal of the delivered figure, the same way the two presets are exact
+  // reciprocals of each other.
+  const sign = DELIVERY_SIGN[w] || 1;
+  const dxTotal = dxDelivered * sign;
+  const dxRate = dxTotal / T;                       // frame-widths per second
+  const dyTotal = dyDelivered * sign;
+  const scaleTotal = Math.pow(raw.scale, g * sign);
   const scaleRate = Math.pow(scaleTotal, 1 / T);
   const pxPerFrame = Math.abs(dxTotal) * WALL_PX[w] / (T * FPS);
 
@@ -311,6 +417,14 @@ function spec(moveId, wallId, durationSec, speedPct, centrePct) {
     dxTotal: round(dxTotal, 4), dxRate: round(dxRate, 4),
     dyTotal: round(dyTotal, 4), dyRate: round(dyTotal / T, 4),
     scaleTotal: round(scaleTotal, 4), scaleRate: round(scaleRate, 4),
+    // What a CORRECT finished clip must measure, before the right wall's
+    // inversion is compensated for. compare() and the motion-lock end frame
+    // read these; everything the prompt is built from reads the plain ones.
+    dxDelivered: round(dxDelivered, 4),
+    dyDelivered: round(dyDelivered, 4),
+    scaleDelivered: round(scaleDelivered, 4),
+    deliveryInverted: sign !== 1,
+    towardEdgeDelivered: dxDelivered === 0 ? null : (dxDelivered > 0 ? 'RIGHT' : 'LEFT'),
     rollTotal: raw.roll,
     pxPerFrame: round(pxPerFrame, 2),
     overSafeCap: pxPerFrame > SAFE_PX_PER_FRAME && w !== 'center',
@@ -477,7 +591,7 @@ function numericBlock(moveId, wallId, durationSec, speedPct, centrePct) {
 // frame right pushes the picture toward frame left. So the INSPECTOR prints
 // both readings side by side. This string is never sent to a generator.
 function cameraGloss(sp) {
-  const zooms = Math.abs(sp.scaleTotal - 1) >= 0.15;
+  const zooms = Math.abs(sp.scaleTotal - 1) >= zoomDeadzone(sp.wall);
 
   if (sp.kind === 'static') {
     return { camera: 'camera is locked off', picture: 'nothing moves', numbers: '' };
@@ -569,18 +683,36 @@ function compare(moveId, wallId, measured, speedPct, centrePct) {
   const want = spec(moveId, wallId, measured.durationSec || 5, speedPct, centrePct);
   const row = { wall: wallId, problems: [], want: want };
 
-  row.dx = { want: want.dxTotal, got: measured.dxTotal };
-  row.scale = { want: want.scaleTotal, got: measured.scaleTotal };
+  // GRADED AGAINST THE ROOM, NOT AGAINST THE ASK. On the right wall the two are
+  // opposites on purpose (see DELIVERY_SIGN): the contract asks for the reverse
+  // because the generator reverses it. A finished clip still has to MEASURE the
+  // room's own geometry, so that is what it is held to - otherwise inverting the
+  // ask would have inverted the verdict along with it and every correct right
+  // wall would come back "travelling the WRONG WAY".
+  const wantDx = want.dxDelivered;
+  const wantScale = want.scaleDelivered;
+  row.inverted = !!want.deliveryInverted;
+  row.dx = { want: wantDx, got: measured.dxTotal, asked: want.dxTotal };
+  row.scale = { want: wantScale, got: measured.scaleTotal, asked: want.scaleTotal };
   row.roll = { want: 0, got: measured.rollTotal };
   row.bgRatio = measured.bgRatio === undefined ? null : measured.bgRatio;
 
-  const dxWanted = Math.abs(want.dxTotal) > 0.05;
+  const dxWanted = Math.abs(wantDx) > 0.05;
   if (dxWanted) {
-    const sameDir = (want.dxTotal > 0) === (measured.dxTotal > 0);
-    const ratio = Math.abs(measured.dxTotal) / Math.abs(want.dxTotal);
+    const sameDir = (wantDx > 0) === (measured.dxTotal > 0);
+    const ratio = Math.abs(measured.dxTotal) / Math.abs(wantDx);
     row.dx.ratio = round(ratio, 2);
     row.dx.sameDirection = sameDir;
-    if (!sameDir && Math.abs(measured.dxTotal) > 0.05) row.problems.push('travelling the WRONG WAY');
+    // WRONG WAY GETS THE SAME ADVICE AS TOO-WEAK, and it had not been getting
+    // it. The right wall has now come back the wrong way on three measured
+    // C_PushOut sets in a row (+0.233, then +0.083 after the direction field was
+    // rewritten, against an ask of -0.428). Rewording is what has already been
+    // tried; a start/end frame pair makes the translation a geometric fact
+    // rather than a request, which is the whole reason Lock motion exists.
+    if (!sameDir && Math.abs(measured.dxTotal) > 0.05) {
+      row.problems.push('travelling the WRONG WAY - press Lock motion on this wall and regenerate; '
+        + 'prompting alone has not turned it round');
+    }
     else if (ratio < 0.5) row.problems.push('travelling only ' + Math.round(ratio * 100)
       + '% as far as the preset - press Lock motion on this wall and regenerate; prompting '
       + 'alone has not moved it');
@@ -591,9 +723,9 @@ function compare(moveId, wallId, measured, speedPct, centrePct) {
 
   // Scale is compared in log space: x2.0 and x0.5 are the same size of error,
   // and a linear comparison would call one of them twice as bad as the other.
-  const scaleWanted = Math.abs(want.scaleTotal - 1) > 0.15;
+  const scaleWanted = Math.abs(wantScale - 1) > zoomDeadzone(want.wall);
   if (scaleWanted) {
-    const lw = Math.log(want.scaleTotal);
+    const lw = Math.log(wantScale);
     const lg = Math.log(Math.max(0.05, measured.scaleTotal));
     const sr = lg / lw;
     row.scale.ratio = round(sr, 2);
@@ -622,6 +754,46 @@ function compare(moveId, wallId, measured, speedPct, centrePct) {
     row.problems.push('the horizon rolls ' + Number(measured.rollTotal).toFixed(1) + ' deg');
   }
   return row;
+}
+
+/**
+ * DOES THE CENTRE KEEP PACE WITH THE SIDES? A set-level test that compare()
+ * cannot make, because it only ever sees one wall.
+ *
+ * Each wall's delivered/asked ratio (dx for the sides, log-scale for the
+ * centre - the units the spec compounds in) says how hard that job ran against
+ * its own ask. The rig reads as one camera only if the three ran equally hard,
+ * so the centre's ratio over the sides' mean is its pace. Measured on the
+ * delivered sets in the Library: 0.95, 0.36, and two lone centres at 3.3 and
+ * 3.6 against sides near 1.1 - the same contract every time, so this is
+ * per-scene variance a fixed trim cannot remove. It is measured per set and
+ * turned into the centre trim that would have matched, for a centre-only
+ * re-roll of that scene.
+ *
+ * `rows` are compare() rows; `centrePct` the trim they were measured under.
+ */
+function paceMatch(rows, centrePct) {
+  const byWall = {};
+  (rows || []).forEach(r => { byWall[r.wall] = r; });
+  const c = byWall.center;
+  const sides = ['left', 'right'].map(w => byWall[w])
+    .filter(r => r && r.dx && r.dx.ratio > 0 && r.dx.sameDirection !== false);
+  if (!c || !c.scale || !(c.scale.ratio > 0) || !sides.length) return null;
+  const sideRatio = sides.reduce((a, r) => a + r.dx.ratio, 0) / sides.length;
+  const pace = c.scale.ratio / sideRatio;
+  const cp = Number(centrePct) > 0 ? Number(centrePct) : 100;
+  // The trim box's own range; rounded to its 5% step.
+  const suggested = Math.min(400, Math.max(5, Math.round(cp / pace / 5) * 5));
+  const matched = pace >= 0.8 && pace <= 1.25;
+  return {
+    centreRatio: round(c.scale.ratio, 2), sideRatio: round(sideRatio, 2), pace: round(pace, 2),
+    matched, centrePct: cp, suggestedCentrePct: matched ? cp : suggested,
+    note: matched
+      ? 'The centre kept pace with the sides (' + round(pace, 2) + 'x).'
+      : 'The centre ran at ' + round(pace, 2) + 'x the pace of the side walls ('
+        + (pace > 1 ? 'too fast' : 'too slow') + '). A centre trim of ' + suggested
+        + '% would have matched this set - apply it and regenerate the centre only.',
+  };
 }
 
 // ------------------------------------------------------------------ JSON ---
@@ -689,6 +861,209 @@ function anchorsFor(dxTotal) {
 const WALL_YAW = { left: -90, center: 0, right: 90 };
 const CANVAS_X = { left: 0, center: 3840, right: 8000 };
 
+// ------------------------------------------------- THE TRAVELLING ELEMENT ---
+// One object crossing all three walls as a single journey, so an audience at
+// the one eyepoint follows it with their head instead of watching three
+// unrelated clips. The timetable lives here, beside the camera figures, for the
+// same reason every other number moved here: the page computed one version of
+// it (33.3 / rate) and rig.js stored another (a flat 1.9s), so moving the rate
+// box changed one of them and not the other, and nothing ever compared them.
+//
+// `ratePctPerSec` is a percentage of the WHOLE three-wall span per second. One
+// wall is a third of the span, so
+//     per_wall_seconds = (100 / 3) / rate
+//     whole_crossing   = 100 / rate
+// and 17.5%/s is the 1.90s-per-wall, 5.71s-total figure measured off the
+// reference butterfly.
+
+// How many of them there are, when the subject box says so. "5 large Owl" is
+// five owls, and the contract used to answer that with "This is ONE 5 large
+// Owl" - a sentence that tells the generator the count is both five and one.
+function elementCount(subject) {
+  const s = String(subject == null ? '' : subject).trim();
+  const digits = s.match(/^(\d{1,3})\b/);
+  if (digits) return parseInt(digits[1], 10);
+  const WORDS = { a: 1, an: 1, one: 1, single: 1, lone: 1, two: 2, pair: 2, three: 3, four: 4,
+                  five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12 };
+  const first = s.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+  return WORDS[first] != null ? WORDS[first] : null;
+}
+
+/**
+ * The element's timetable for ONE wall, or null if no element is configured.
+ * Everything is derived from the rate and the clip length - nothing is read
+ * back off the form, because two places computing it is how they drifted.
+ */
+// The fallback windows, used only when a rig has no `element.windows` yet - a
+// state file saved before the timestamps replaced the rate box. Derived from the
+// old rate model so an existing scene keeps the timing it already had.
+function legacyWindows(c, dur) {
+  const rate = (Number.isFinite(Number(c.ratePctPerSec)) && Number(c.ratePctPerSec) > 0)
+    ? Number(c.ratePctPerSec) : 17.5;
+  const dir = c.direction === 'left_to_right' ? 'left_to_right' : 'right_to_left';
+  const order = dir === 'right_to_left' ? ['right', 'center', 'left'] : ['left', 'center', 'right'];
+  let perWall = (100 / 3) / rate;
+  let entry = Number.isFinite(Number(c.entrySec)) ? Number(c.entrySec) : 2.0;
+  if (perWall * 3 > dur) { perWall = dur / 3; entry = 0; }
+  else if (entry + perWall * 3 > dur) { entry = Math.max(0, dur - perWall * 3); }
+  const out = {};
+  order.forEach((w, i) => {
+    out[w] = { enter: round(entry + i * perWall, 2), exit: round(entry + (i + 1) * perWall, 2) };
+  });
+  return out;
+}
+
+/**
+ * The element's timetable for ONE wall, or null if no element is configured.
+ *
+ * THE OPERATOR STATES THE TIMES NOW, AND SPEED FALLS OUT OF THEM. It used to be
+ * the other way round: a "% of the room per second" box set the pace and the
+ * tool worked out the windows from it. That was backwards twice over -
+ *   * it is a unit nobody thinks in, and its own default (17.5%/s) asked for a
+ *     5.71s crossing that does not fit a 5s clip at all; and
+ *   * the windows were the thing that actually mattered, so the number that
+ *     mattered was being derived from a number chosen without seeing it.
+ * Each wall now carries `enter` and `exit` in seconds, they are clamped to the
+ * clip, and the crossing speed is REPORTED from them rather than set.
+ */
+function elementSchedule(rig, wallId) {
+  const c = (rig && rig.element) || {};
+  if (!c.enabled || !String(c.subject || '').trim()) return null;
+
+  const w = wallKey(wallId);
+  const dur = Math.max(1, Number(rig && rig.durationSec) || 5);
+  const dir = c.direction === 'left_to_right' ? 'left_to_right' : 'right_to_left';
+  const order = dir === 'right_to_left' ? ['right', 'center', 'left'] : ['left', 'center', 'right'];
+  const idx = order.indexOf(w);
+  if (idx < 0) return null;
+
+  const wins = (c.windows && typeof c.windows === 'object') ? c.windows : legacyWindows(c, dur);
+  const notes = [];
+
+  // NOTHING MAY POINT OUTSIDE THE CLIP. A window running past the end is how the
+  // third wall used to be handed a slot from 5.71s to 7.61s of a five-second
+  // video - an instruction it could not obey, which it answered by showing the
+  // element whenever it felt like it.
+  function clampWin(key) {
+    const raw = wins[key] || {};
+    let a = Number(raw.enter), b = Number(raw.exit);
+    if (!Number.isFinite(a)) a = 0;
+    if (!Number.isFinite(b)) b = dur;
+    const oa = a, ob = b;
+    a = Math.min(Math.max(0, a), dur);
+    b = Math.min(Math.max(0, b), dur);
+    // Never a zero-length window. Clamping an exit back to the end of the clip
+    // can collapse it onto its own entry - a window of 0s, which divides by zero
+    // when the crossing speed is read off it - so pull the ENTRY back instead.
+    if (b <= a) {
+      a = Math.max(0, Math.min(a, dur - 1 / FPS));
+      b = Math.min(dur, a + 1 / FPS);
+    }
+    return { enter: round(a, 2), exit: round(b, 2), clamped: (oa !== a || ob !== b) };
+  }
+
+  const all = {};
+  for (const k of ['left', 'center', 'right']) all[k] = clampWin(k);
+  const mine = all[w];
+  // Report EVERY clamped wall, not just this one: the timeline shows all three,
+  // and a window silently moved on a wall you are not currently looking at is
+  // exactly the kind of thing that gets noticed only in the delivered clip.
+  const clamped = ['left', 'center', 'right'].filter(k => all[k].clamped);
+  if (clamped.length) {
+    notes.push('Outside the ' + dur + 's clip and clamped: '
+      + clamped.map(k => k.toUpperCase() + ' to ' + all[k].enter + '-' + all[k].exit + 's').join(', ')
+      + '. No window can point past the end of the clip.');
+  }
+
+  const onScreen = round(mine.exit - mine.enter, 2);
+
+  // SPEED IS A READING NOW, NOT A SETTING. The element crosses from clear of one
+  // edge to clear of the other in `onScreen` seconds, which is 1.24 frame widths
+  // of travel - the 0.12 overshoot at each end is where it is still out of shot.
+  const SPAN = 1.24;
+  const crossRate = round(SPAN / onScreen, 3);              // frame widths per second
+  const roomPctPerSec = round((100 / 3) / onScreen, 1);     // % of the whole room per second
+
+  // THE RELAY SHOULD CHAIN: each wall picks the element up where the last one
+  // dropped it. A gap means it is nowhere in the room for a moment; an overlap
+  // means it is on two walls at once. Both are allowed - the operator sets the
+  // times now - but neither should happen silently.
+  for (let i = 1; i < order.length; i++) {
+    const prev = all[order[i - 1]], next = all[order[i]];
+    const d = round(next.enter - prev.exit, 2);
+    if (d > 0.05) {
+      notes.push('Gap of ' + d + 's between ' + order[i - 1].toUpperCase() + ' letting go ('
+               + prev.exit + 's) and ' + order[i].toUpperCase() + ' picking it up (' + next.enter
+               + 's) - it is nowhere in the room for that moment.');
+    } else if (d < -0.05) {
+      notes.push('Overlap of ' + Math.abs(d) + 's between ' + order[i - 1].toUpperCase() + ' and '
+               + order[i].toUpperCase() + ' - it is on two walls at once.');
+    }
+  }
+
+  // AND IT HAS TO BE A PACE A CROSSING CAN ACTUALLY BE DRAWN AT. Measured on the
+  // delivered set of 2026-09-23: the contract asked for 0.95s per wall and every
+  // wall drew a crossing of roughly 3 seconds instead - the right wall let the
+  // owls in at 2.0s exactly as asked and still had them on screen at 5.0s.
+  if (onScreen < 1.5) {
+    notes.push(w.toUpperCase() + ' is on screen for only ' + onScreen + 's. Every delivered '
+             + 'crossing so far has been drawn at roughly 3s across a wall whatever it was asked '
+             + 'for, so a window this short is the one most likely to be overrun.');
+  }
+
+  const enterEdge = dir === 'right_to_left' ? 'RIGHT' : 'LEFT';
+  const exitEdge = dir === 'right_to_left' ? 'LEFT' : 'RIGHT';
+  const inAt = mine.enter, outAt = mine.exit;
+
+  // HOW BIG IT IS. Nothing stated this, and the delivered set showed exactly what
+  // happens: one prompt and one reference picture produced small distant owls on
+  // the right wall, mid-sized ones on the centre, and on the left wall a SINGLE
+  // bird in close-up filling half the frame.
+  const askedSize = Number(c.sizePctOfHeight);
+  const sizePct = (Number.isFinite(askedSize) && askedSize > 0) ? Math.min(90, askedSize) : 12;
+
+  // AND HOW HIGH UP IT CROSSES. The same gap as size, and it showed the same
+  // way on the delivered set: the right wall's owls crossed up near the horizon
+  // and the left wall's sat low and enormous. An element that changes height
+  // between walls is three flights, not one - the audience is turning its head
+  // through a continuous line, so the line has to be at one height.
+  const askedY = Number(c.heightPctFromTop);
+  const heightPct = (Number.isFinite(askedY) && askedY > 0) ? Math.min(95, askedY) : 35;
+
+  // WHERE IT IS, SECOND BY SECOND. Entry and exit times on their own were read as
+  // loose cues and overrun every time. The camera half of this contract is obeyed
+  // because it is given as a position at a time, so the element gets the same. x
+  // is the element centre: 0 = left edge, 1 = right edge, and values outside
+  // 0..1 are where it is still clear of the frame.
+  const xIn = enterEdge === 'RIGHT' ? 1.12 : -0.12;
+  const xOut = exitEdge === 'RIGHT' ? 1.12 : -0.12;
+  const xs = [];
+  for (let k = 0; k <= 4; k++) {
+    const f = k / 4;
+    xs.push([round(inAt + f * onScreen, 2), round(xIn + f * (xOut - xIn), 2)]);
+  }
+
+  const firstEnter = Math.min.apply(null, order.map(k => all[k].enter));
+  const lastExit = Math.max.apply(null, order.map(k => all[k].exit));
+
+  return {
+    sizePctOfHeight: sizePct, heightPctFromTop: heightPct, xPath: xs,
+    subject: String(c.subject).trim(),
+    count: elementCount(c.subject),
+    direction: dir, order: order, wall: w, index: idx, lastIndex: order.length - 1,
+    windows: all,
+    onScreenSec: onScreen, perWallSec: onScreen,
+    crossRateFrameWidthsPerSec: crossRate, roomPctPerSec: roomPctPerSec,
+    totalSec: round(lastExit - firstEnter, 2), firstEnter: firstEnter, lastExit: lastExit,
+    durationSec: dur, fps: FPS,
+    enterEdge: enterEdge, exitEdge: exitEdge, inAt: inAt, outAt: outAt,
+    inFrame: Math.round(inAt * FPS), outFrame: Math.round(outAt * FPS),
+    lastFrame: Math.round(dur * FPS),
+    refPath: c.refPath || null,
+    notes: notes,
+  };
+}
+
 // WHAT A GENERATOR IS TOLD NOT TO DO. Twelve lines, not fifty.
 //
 // The previous list ran to fifty entries inside a 9.5KB contract, and the
@@ -697,11 +1072,30 @@ const CANVAS_X = { left: 0, center: 3840, right: 8000 };
 // its background at 5% of the frame rate. Long inputs get attended to in the
 // middle least of all, and the important constraints were in the middle.
 // Everything here is something a delivered clip has actually got wrong.
-function negativePrompt(sp) {
+// WHEN A TRAVELLING ELEMENT IS CONFIGURED, FOUR OF THESE FORBID IT.
+// "no object travels across the picture on its own", "nothing added: no new
+// object, character...", "characters keep their exact design, count and facing"
+// and the wrong-edge rule each describe precisely what the element does. The
+// contract was ordering the generator to draw it and not to draw it in the same
+// breath, and a contradicted rule is one a model settles by guessing - which is
+// how the element came back repeating, or sitting in frame the whole clip, or
+// not appearing at all. Each exemption NAMES the element rather than softening
+// the rule, so everything that is not the element stays exactly as locked.
+function negativePrompt(sp, el) {
   const n = [];
+  // Short on purpose: the window and the subject are stated once, in
+  // travelling_element. Repeating them across four negatives cost 500
+  // characters of a contract already over its size budget, and an oversized
+  // contract gets its middle ignored - the exact failure this file exists for.
+  const ex = el ? ' (travelling_element excepted, ' + el.inAt + '-' + el.outAt + 's)' : '';
   if (sp.towardEdge) {
     const wrong = sp.towardEdge === 'LEFT' ? 'RIGHT' : 'LEFT';
-    n.push('nothing travels toward the ' + wrong + ' edge - not one object, not the crowd');
+    // The element may legitimately cross against the camera: a right-to-left
+    // element on a wall whose picture travels right does exactly that, and on a
+    // push-in right wall it does. Only exempt it when it actually clashes.
+    const clash = !!el && el.exitEdge === wrong;
+    n.push('nothing travels toward the ' + wrong + ' edge - not one object, not the crowd'
+         + (clash ? ex : ''));
   }
   // Outside the direction test on purpose: a centre wall on a dolly has dx = 0,
   // so these two used to be omitted and its contract carried no rule against an
@@ -709,17 +1103,19 @@ function negativePrompt(sp) {
   if (sp.kind !== 'static') {
     n.push('the background is never still while the foreground moves');
     n.push('no object travels across the picture on its own - the picture is what moves, and '
-         + 'nothing changes its position within the scene');
+         + 'nothing changes its position within the scene' + ex);
   }
-  if (Math.abs(sp.scaleTotal - 1) < 0.15) {
+  if (Math.abs(sp.scaleTotal - 1) < zoomDeadzone(sp.wall)) {
     n.push('no zoom, no dolly, nothing gets bigger or smaller');
   }
   if (Math.abs(sp.dxTotal) < 0.02) n.push('no sideways drift, no pan');
   n.push('no held frame and no jump - the motion is continuous from frame 1 to the last frame');
   n.push('no roll, no tilt, no yaw, no camera shake');
-  n.push('nothing added: no new object, character, crowd, sign, text, confetti, sparkle, particle, weather or light');
+  n.push('nothing added: no new object, character, crowd, sign, text, confetti, sparkle, particle, '
+       + 'weather or light' + ex);
   n.push('nothing removed, redrawn, restyled or recoloured');
-  n.push('characters keep their exact design, count and facing');
+  n.push('characters keep their exact design, count and facing'
+       + (el ? ' - the travelling element is not one of them and is not in the scene already' : ''));
   n.push('the horizon stays at the same height in every frame');
   n.push('no cut, no dissolve, no speed ramp, no ease');
   return n;
@@ -737,8 +1133,8 @@ function negativePrompt(sp) {
 // So size is now described only by what happens to the PICTURE: things get
 // bigger or smaller, and the frame shows less or more. Neither has a camera
 // reading.
-function sizeWords(scaleTotal) {
-  if (Math.abs(scaleTotal - 1) < 0.15) {
+function sizeWords(scaleTotal, deadzone) {
+  if (Math.abs(scaleTotal - 1) < (deadzone == null ? 0.15 : deadzone)) {
     return { change: 'none - everything stays exactly the size it is now', fov: 'unchanged' };
   }
   if (scaleTotal > 1) {
@@ -769,9 +1165,13 @@ function sizeWords(scaleTotal) {
  */
 function cameraJson(moveId, wallId, durationSec, opts) {
   const sp = spec(moveId, wallId, durationSec, opts && opts.speedPct, opts && opts.centrePct);
-  const zooms = Math.abs(sp.scaleTotal - 1) >= 0.15;
+  // The element's timetable for THIS wall, if one is configured. The negatives
+  // and the revealed-edge band both need it, because both of them otherwise
+  // forbid the element outright.
+  const el = (opts && opts.element) || null;
+  const zooms = Math.abs(sp.scaleTotal - 1) >= zoomDeadzone(sp.wall);
   const scaleEnd = zooms ? sp.scaleTotal : 1.0;
-  const sz = sizeWords(scaleEnd);
+  const sz = sizeWords(scaleEnd, zoomDeadzone(sp.wall));
   const lm = landmarkRows(sp);
   const n = Math.max(2, Math.round(sp.durationSec));
 
@@ -855,15 +1255,30 @@ function cameraJson(moveId, wallId, durationSec, opts) {
                     + 'these positions. Outside 0..1 means it has left frame by then.';
 
   if (sp.towardEdge) {
+    const revealed = sp.towardEdge === 'RIGHT' ? 'LEFT' : 'RIGHT';
     out.revealed_edge = {
-      edge: sp.towardEdge === 'RIGHT' ? 'LEFT' : 'RIGHT',
+      edge: revealed,
       width_by_end: round(Math.abs(sp.dxTotal), 3),
+      // The element enters through one of the frame edges, and on some walls
+      // that is this band. "Put no new object in this band" and "the element
+      // enters at the RIGHT edge at 2.0s" were flatly contradicting each other
+      // on exactly the walls where the two edges coincide.
       fill: 'continue the material right next to it - the same floor, wall, sky or crowd. Put no '
-          + 'new object, character or feature in this band.',
+          + 'new object, character or feature in this band.'
+          + (el && el.enterEdge === revealed
+              ? ' The travelling element crosses this edge at ' + el.inAt + 's and is not band fill.'
+              : ''),
     };
   }
 
-  // THE RIGHT WALL KEEPS TRAVELLING THE SAME WAY AS THE LEFT ONE.
+  // CONFIRMED WORKING ON C_PushIn - DO NOT REWORD WITHOUT A MEASURED SET.
+  // The owner checked delivered output after this went in: "right motion is
+  // fixed, it's looking nice for push in." Three sets before it were wrong-way
+  // three times out of three. The wording below and the rig_context block are
+  // the only things that changed, so they are load-bearing until something
+  // measured says otherwise.
+  //
+  // THE RIGHT WALL USED TO TRAVEL THE SAME WAY AS THE LEFT ONE.
   //
   // Measured across three delivered sets (Snow, Toronto, Bear): the LEFT wall
   // obeyed its direction every time, and the RIGHT wall travelled the SAME way
@@ -884,14 +1299,50 @@ function cameraJson(moveId, wallId, durationSec, opts) {
   // LEFT. Anchoring travel to the visible vanishing direction therefore comes
   // out mirrored on its own, from a rule that only ever talks about this one
   // frame. Same reason `perspective` works and never needed a sibling either.
-  if (sp.wall !== 'center' && sp.towardEdge) {
+  // ...AND THEN IT SENT THE PUSH-OUT SET THE WRONG WAY. Measured 2026-09-23,
+  // C_PushOut at 100% / centre 25%, one set of three:
+  //
+  //     wall     asked dx     measured dx
+  //     LEFT       +0.424        +0.064     right way, 15% of the distance
+  //     CENTER      scale 0.896   scale 0.790  right way, 2.15x too much
+  //     RIGHT      -0.424        +0.233     WRONG WAY - it performed a push in
+  //
+  // The mechanism is the premise, not the conclusion. This field asserts where
+  // depth lies in the supplied picture, and on both side plates it asserted the
+  // opposite of what the plate shows: the right wall's image has its nearest,
+  // largest mass (the towers) at its LEFT edge, and the left wall's at its
+  // RIGHT - in both, the near end is the SEAM, not the outer end. Told "the
+  // nearest things sit at your RIGHT edge" by text and the reverse by the
+  // picture, the right wall believed the picture, followed "travel into the
+  // depth" toward what IT could see was far, and came out backwards.
+  //
+  // So the direction is no longer DERIVED from a depth reading the tool has not
+  // verified. It is stated in frame terms, which need no premise and can be
+  // checked against the result: which edge everything leaves by, and which edge
+  // uncovers new material. `perspective` below still describes the intended
+  // geometry of the set - the owner approved that and it is untouched - it just
+  // no longer decides which way the camera goes.
+  //
+  // C_PushIn IS DELIBERATELY LEFT EXACTLY AS IT WAS. The owner confirmed it
+  // from delivered output ("right motion is fixed, it's looking nice for push
+  // in") after three wrong-way sets, and asked for it not to be touched. Its
+  // contract is byte-identical to before this change; only the side walls on a
+  // move that travels toward the SEAM - which is push-out - get the new field.
+  if (sp.wall !== 'center' && sp.towardEdge && !sp.towardSeam) {
     out.direction_from_perspective =
       'Read the direction off this image: the world recedes toward its ' + sp.seamEdge
       + ' edge and the nearest, largest things sit at its ' + sp.outerEdge + ' edge. '
-      + (sp.towardSeam
-          ? 'The picture travels INTO that depth, toward the far ' + sp.seamEdge + ' end.'
-          : 'The picture travels OUT of that depth, off the near ' + sp.outerEdge + ' end - the closest '
-            + 'things leave frame first.');
+      + 'The picture travels OUT of that depth, off the near ' + sp.outerEdge + ' end - the closest '
+      + 'things leave frame first.';
+  } else if (sp.wall !== 'center' && sp.towardEdge) {
+    const away = sp.towardEdge;
+    const into = away === 'LEFT' ? 'RIGHT' : 'LEFT';
+    out.direction_check =
+      'DIRECTION - in frame terms only. Do not work it out from the perspective of the picture. '
+      + 'Everything visible at 0s moves toward the ' + away + ' edge and whatever is against that '
+      + 'edge at 0s is out of frame by the end. The band along the ' + into + ' edge, '
+      + Math.round(Math.abs(sp.dxTotal) * 100) + '% of the frame wide, is material from outside the '
+      + 'frame. If anything finishes nearer the ' + into + ' edge than it started, it is backwards.';
   }
 
   if (sp.wall !== 'center') {
@@ -921,16 +1372,22 @@ function cameraJson(moveId, wallId, durationSec, opts) {
   };
   for (const w of others) {
     const o = spec(sp.move, w, sp.durationSec, opts && opts.speedPct, opts && opts.centrePct);
-    const oz = Math.abs(o.scaleTotal - 1) >= 0.15;
+    // The DELIVERED figures, not the ask. This block exists so three separate
+    // jobs cut together as one move, and what cuts together is what the finished
+    // clips actually do - the right wall's ask is deliberately the reverse of
+    // that (see DELIVERY_SIGN), and passing the reverse on here would tell the
+    // other two walls the rig splits in half.
+    const oz = Math.abs(o.scaleDelivered - 1) >= zoomDeadzone(o.wall);
     out.rig_context[w] = {
-      dx_total: o.dxTotal,
-      travel: o.towardEdge ? 'toward its ' + o.towardEdge + ' edge' : 'no sideways travel',
-      scale_end: oz ? round(o.scaleTotal, 3) : 1.0,
+      dx_total: o.dxDelivered,
+      travel: o.towardEdgeDelivered ? 'toward its ' + o.towardEdgeDelivered + ' edge'
+                                    : 'no sideways travel',
+      scale_end: oz ? round(o.scaleDelivered, 3) : 1.0,
     };
   }
   out.rig_context.your_wall = sp.wall;
 
-  out.never = negativePrompt(sp);
+  out.never = negativePrompt(sp, el);
   return out;
 }
 
@@ -940,6 +1397,6 @@ function presetIds() { return Object.keys(MOVES); }
 module.exports = {
   cameraGloss,
   MOVES, REF_VIEW_PX, WALL_PX, WALL_H, FPS, SAFE_PX_PER_FRAME, BENCHMARK_DX_RATE,
-  normalise, spec, posAt, posAtY, landmarkRows, numericBlock, inspector, presetIds, compare,
-  cameraJson, travelWord, anchorsFor,
+  normalise, spec, posAt, posAtY, landmarkRows, numericBlock, inspector, presetIds, compare, paceMatch,
+  cameraJson, travelWord, anchorsFor, elementSchedule, elementCount, DELIVERY_SIGN,
 };
