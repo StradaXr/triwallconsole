@@ -5,6 +5,8 @@
   "description": "Tri-wall immersive content console - C_* rig moves measured from the theatre's own nDisplay reference renders, reference-matched decoder, five-segment room ledger, single-eyepoint reprojection (Fix B), version history and self-calibration.",
   "main": "server.js",
   "scripts": {
+    "start:astra": "node astra/server.js",
+    "test:astra": "node --test astra/server.test.js",
     "start": "node server.js",
     "doctor": "node -e \"require('./preflight.js').preflight({higgsfield:'higgsfield',claude:'claude',python:process.platform==='win32'?'python':'python3',ffmpeg:'ffmpeg'}).then(d=>{console.log('node',d.node,d.platform);d.checks.forEach(c=>console.log((c.ok?'  ok  ':'  --  ')+c.label+' \u2014 '+c.detail+(c.fix&&!c.ok?'\\n        fix: '+c.fix:'')));process.exit(d.allRequiredOk?0:1)})\""
   },

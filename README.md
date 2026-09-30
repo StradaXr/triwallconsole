@@ -1,5 +1,10 @@
 # Tri-Wall Console
 
+For the separate **Astra connected image workspace**, run
+`npm run start:astra` and open http://localhost:8937/.
+It connects to your signed-in Codex to draft, generate and refine directly
+from the console, and stores its files locally. See [astra/README.md](astra/README.md).
+
 TEST UPDATE
 
 Generates the three wall videos for one camera move in a U-shaped LED immersive
