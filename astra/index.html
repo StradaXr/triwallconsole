@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tri-Wall Console · Astra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/tri-wall.css"><link rel="stylesheet" href="/astra.css">
+<script src="/app.js" defer></script>
+</head>
+<body><main class="wrap">
+  <header class="masthead">
+    <div><h1>Tri-Wall Console <span class="edition">Astra</span></h1>
+      <div class="tagline">One world. Three views. Create the center, build the sides, and refine every detail.</div>
+      <div class="chatlink">Connected image workspace · 16:9 images saved on this PC</div>
+    </div>
+    <div class="mast-right"><div class="rig-diagram"><div class="seg"></div><div class="seg center"></div><div class="seg"></div></div><div class="rig-label">L · C · R</div><div class="buildstamp" id="buildStamp"></div></div>
+  </header>
+  <nav class="tabbar" aria-label="Workspace"><button class="tabbtn on" data-tab="image" aria-selected="true">Image</button><button class="tabbtn" data-tab="refine" aria-selected="false">Refine</button><button class="tabbtn" data-tab="library" aria-selected="false">Library <span class="badge" id="libraryCount">0</span></button><button class="tabbtn" data-tab="connections" aria-selected="false">Connection <span id="connectionDot" class="connection-dot"></span></button></nav>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <section class="card queue-card" aria-label="Generation queue"><div class="section-head"><h2>Generation <span class="badge" id="queueCount">0</span><span class="sub">create here · watch progress · images return here</span></h2><button class="btn small" id="runQueue">Connect Codex</button></div><div id="queueList"></div><p class="statusline">Uses your Codex subscription. If an image needs resizing, “Fit &amp; use” trims it centrally to the selected 16:9 size and preserves the original.</p></section>
+  <section id="panel-image" class="tabpanel">
+    <div class="setup astra-setup">
+      <div class="card"><h2>Scene <span class="sub">the world shared by all three walls</span></h2><label class="sr-only" for="sceneInput">Scene description</label><textarea id="sceneInput" placeholder="Describe the setting, atmosphere, lighting, and style. Start with the center wall, or upload a reference below."></textarea><div class="actions"><button class="btn small" id="saveSceneBtn">Save scene</button><button class="btn ghost small" id="syncBtn">Refresh</button></div><div class="statusline" id="saveStatus">Your scene and prompts stay on this PC.</div></div>
+      <div class="card"><h2>Generation <span class="sub">all three walls</span></h2><label class="prompt-tag" for="size">Requested size · 16:9</label><select id="size"><option value="1536x864">1536 × 864</option><option value="2048x1152" selected>2048 × 1152 · 2K</option><option value="2560x1440">2560 × 1440</option><option value="3840x2160">3840 × 2160 · 4K target</option></select><label class="prompt-tag" for="quality">Quality direction</label><select id="quality"><option value="low">Low · quick exploration</option><option value="medium">Medium</option><option value="high" selected>High</option><option value="xhigh">Extra high</option><option value="max">Maximum</option></select><div class="statusline">These guide the built-in image tool. Actual dimensions are shown; use Fit &amp; use when a result needs trimming to 16:9.</div></div>
+      <div class="card"><h2>Generate with Codex</h2><div class="provider-title">Codex / ChatGPT</div><div class="statusline">Your existing subscription workflow</div><div class="provider-image">GPT-6 Astra</div><div class="statusline">Prompt direction by Astra · images by the built-in image tool.</div><div id="connectionSummary" class="statusline">Checking connection…</div><button class="btn ghost small" id="setupBtn">Connection details</button></div>
+    </div>
+    <div class="section-head"><h2><span class="stepno">1</span>Image generation <span class="sub">center first, then left and right</span></h2><button class="btn small" id="generateSides">Generate left &amp; right</button></div>
+    <div class="composition-bar"><div><label class="prompt-tag" for="mode">Composition</label><select id="mode"><option value="distinct">Distinct — separate views, one shared world</option><option value="extension">Extension — continue the center’s world</option><option value="panoramic">Panoramic — continue the adjoining edges</option></select></div><label class="checklabel"><input type="checkbox" id="chainSides" checked> Match right to the finished left, too</label><span class="statusline">Left −90° &nbsp;·&nbsp; Center 0° &nbsp;·&nbsp; Right +90°</span></div>
+    <div class="cols3" id="imageWalls"></div>
+  </section>
+  <section id="panel-refine" class="tabpanel" hidden><div class="section-head"><h2><span class="stepno">2</span>Refine images <span class="sub">describe a change to the current image</span></h2></div><div class="callout-ok">Each refinement keeps the original in your library. Choose a previous image at any time.</div><div class="cols3" id="refineWalls"></div></section>
+  <section id="panel-library" class="tabpanel" hidden><div class="section-head"><h2>Local image library <span class="sub">originals, generations, and refinements</span></h2><select id="libraryFilter" aria-label="Filter library by wall"><option value="all">All walls</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div><div class="library-grid" id="library"></div></section>
+  <section id="panel-connections" class="tabpanel" hidden><div class="section-head"><h2>Connection</h2><button class="btn ghost small" id="recheck">Reconnect</button></div><div class="card"><h2>Codex · existing subscription</h2><div id="connectionDetail" class="statusline"></div><p>Write a prompt and press Generate, Draft prompt, or Refine. Codex works in the background and returns the result to this page. You can keep working here.</p><p>The console and library run on your PC. Prompts and reference images go to OpenAI through your signed-in Codex. Generation counts toward your Codex usage limits.</p><p>GPT-6 Astra directs the request; Codex’s built-in image tool renders the image. No Higgsfield account or separately billed API key is used.</p><p>If disconnected, open Codex and sign in with ChatGPT, then press Reconnect here. A failed or interrupted generation is never automatically resubmitted.</p><div class="statusline" id="storagePath"></div></div></section>
+  <footer><span>TRI-WALL / ASTRA</span><span>16:9 · OpenAI · Local library</span></footer>
+</main>
+<dialog id="previewDialog"><button class="btn ghost small" id="closePreview">Close</button><img id="previewImage" alt="Full-size wall image"></dialog>
+</body></html>
