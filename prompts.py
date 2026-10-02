@@ -138,7 +138,30 @@ def _scene_text(scene: str, m: dict) -> dict:
         clean=f"A clean {n} of large shopfronts seen face-on.",
         # Geometry and lettering words only - none of these is a thing that can be visible in an edge strip.
         neg_extra="vanishing point, converging lines, one-point perspective, receding, diagonal perspective, "
-                  "lettering, alphabet, numbers")
+                  "lettering, alphabet, numbers, kanji, chinese characters, japanese characters")
+
+
+# Distinct views: what each side wall shows as its own picture of the same world.
+DISTINCT = {
+    "room": ("Scene: another wall of the same room: a cosy reading nook with a small bookshelf, a floor cushion and a "
+             "framed picture, the same wall colour and pattern, the same floor.",
+             "Scene: a different wall of the same room: a little desk with a lamp and a potted plant, a soft rug on the "
+             "same floor, the same wall colour and pattern."),
+    "street": ("Scene: another part of the same town: a small square with a round fountain, flower beds and a bench in "
+               "front of a row of pastel shopfronts facing the viewer, under the same sky.",
+               "Scene: a different part of the same town: a little park with round trees, a bandstand and flower "
+               "planters in front of pastel houses facing the viewer, under the same sky."),
+    "city_water": ("Scene: another stretch of the same waterside city: a stone walkway with railings beside calm water, "
+                   "a small green park with round trees and a row of pastel townhouses, with taller buildings behind.",
+                   "Scene: a different stretch of the same waterside city: a little harbour with a few small boats on "
+                   "calm water, a cafe terrace with umbrellas and pastel buildings along the waterfront."),
+    "nature": ("Scene: another view of the same landscape: a meadow of wild flowers in front of a cluster of the same "
+               "trees, with the same hills behind under the same sky.",
+               "Scene: a different view of the same landscape: a calm pond with reeds and rocks, the same trees and "
+               "hills around it under the same sky."),
+    "sky": ("Scene: another part of the same sky with large soft clouds in the same colours and light.",
+            "Scene: a different part of the same sky with a few drifting clouds in the same colours and light."),
+}
 
 
 def template(style: str = "continue", scene: str = DEFAULT_SCENE, medium: str = "cartoon") -> dict:
@@ -147,12 +170,18 @@ def template(style: str = "continue", scene: str = DEFAULT_SCENE, medium: str = 
     m = _M.get(medium, _M["cartoon"])
     t = _scene_text(scene, m)
     if style == "distinct":
-        straight = ("seen straight on with the same camera height and horizon height as the centre, no new vanishing "
-                    "point.")
-        t["left_scene"] = (f"Scene: another view of the same place with its own subject that belongs there, in the "
-                           f"same style, light and colours as the centre, " + straight + (_SIGNS if scene in ("street", "room", "city_water") else ""))
-        t["right_scene"] = (f"Scene: a second, different view of the same place with its own subject that belongs "
-                            f"there, in the same style, light and colours as the centre, " + straight)
+        # Distinct walls are generated from scratch with the centre as a style reference (not painted out from its
+        # edge strips), so they need concrete content of their own. Tested on the canal: a vague "another view with
+        # its own subject" gave an office with a man in a suit and an indoor corridor.
+        left, right = DISTINCT[scene]
+        straight = (" Seen straight on with the same camera height and horizon height as the centre, outdoors in the "
+                    "same light and weather." if scene != "room" else
+                    " Seen straight on as a flat wall at the same camera height, with the same floor line height as "
+                    "the centre.")
+        t["left_scene"] = left + straight + (_SIGNS if scene in ("street", "city_water") else "")
+        t["right_scene"] = right + straight + (_SIGNS if scene in ("street", "city_water") else "")
+        if scene != "room":
+            t["neg_extra"] = ((t.get("neg_extra") or "") + ", indoors, interior, corridor, ceiling, office").lstrip(", ")
     return dict(
         lead=t["lead"], tail=m["tail"], left_scene=t["left_scene"], right_scene=t["right_scene"], ret=t["ret"],
         neg=(t["neg_extra"] + ", " if t.get("neg_extra") else "") + m["neg"], clean=t["clean"] + " " + m["clean_end"],

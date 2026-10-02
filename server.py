@@ -275,17 +275,33 @@ def paint(s: dict, kind: str, extra: dict, swap: dict | None = None) -> dict:
     if not up.exists():
         centre_2k(s).save(up)
     comfy_centre = comfy.upload_image(up, f"tws_{s['name']}_centre.png")
-    report(stage="Preparing the painting recipe")
-    workflow, preset = build_preset(s, comfy_centre)
-    api = comfy.build_api(workflow, preset)
+    recipe = d / "recipe.json"
+    if kind == "reroll" and recipe.exists():
+        # Reuse the exact recipe this room was painted with and change only the one seed (as claude-mcp/run_seeds.py),
+        # so the other wall stays pixel-identical even if the shared workflow builders have changed since.
+        api = json.loads(recipe.read_text(encoding="utf-8"))
+    else:
+        report(stage="Preparing the painting recipe")
+        workflow, preset = build_preset(s, comfy_centre)
+        api = comfy.build_api(workflow, preset)
+        if kind == "reroll":
+            extra["rebuilt"] = True
     if swap and comfy.swap_seeds(api, swap) == 0:
         raise RuntimeError("Couldn't find the seed to change in the painting recipe.")
     return tracked_run(s, api, kind, extra)
 
 
+def keep_recipe(name: str):
+    """The recipe that painted the current walls, for rerolls (see paint)."""
+    d = PROJECTS / name
+    if (d / "pending_api.json").exists():
+        os.replace(d / "pending_api.json", d / "recipe.json")
+
+
 def finish_make(name: str, outs: dict, extra: dict) -> str:
     s = load(name)
     save_2k(s, outs)
+    keep_recipe(name)
     s["versions"] = {p: s.get("versions", {}).get(p, 0) + 1 for p in PIECES}
     s["painted"] = datetime.now().isoformat(timespec="seconds")
     s["has4k"] = False
@@ -300,6 +316,7 @@ def finish_reroll(name: str, outs: dict, extra: dict) -> str:
     s = load(name)
     piece, key, old, new = extra["piece"], extra["key"], extra["old"], extra["new"]
     save_2k(s, outs)
+    keep_recipe(name)
     s["seeds"][key] = new
     s.setdefault("seed_history", []).append({"piece": key, "old": old, "new": new})
     # Only pieces that depend on this seed get a new version number.
@@ -311,7 +328,10 @@ def finish_reroll(name: str, outs: dict, extra: dict) -> str:
     _clear_4k(s)
     compose_layout(s)
     nice = {"left": "left wall", "right": "right wall", "LR": "left corner", "RR": "right corner"}
-    if key != piece:
+    if extra.get("rebuilt"):
+        tail = (" This room was made with an older version of the painter, so the other wall may look a little "
+                "different too. From now on only the piece you choose will change.")
+    elif key != piece:
         tail = f" Corners are painted together with their wall, so the {nice[key]} changed too."
     elif len(changed) > 1:
         tail = " Its corner was repainted to match."
@@ -418,6 +438,22 @@ def job_resume(name: str):
     return FINISH[pend["kind"]](name, outs, pend["extra"])
 
 
+def adopt_recipes():
+    """Rooms painted before recipes were kept: if the last finished job was a painting, keep its recipe."""
+    for d in PROJECTS.iterdir():
+        f, pend = d / "settings.json", d / "pending_api.json"
+        if (d / "recipe.json").exists() or not pend.exists() or not f.exists():
+            continue
+        try:
+            if json.loads(f.read_text(encoding="utf-8")).get("pending"):
+                continue
+            api = json.loads(pend.read_text(encoding="utf-8"))
+            if any(v.get("class_type") == "KSampler" for v in api.values()):
+                os.replace(pend, d / "recipe.json")
+        except Exception:
+            continue
+
+
 def resume_pending():
     """On start-up, the most recent project with a recorded, unfinished job is picked up again."""
     for d in sorted(PROJECTS.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -440,6 +476,7 @@ def resume_pending():
 @asynccontextmanager
 async def lifespan(_app):
     # Pick up any job that was still queued when the studio last closed.
+    adopt_recipes()
     threading.Thread(target=resume_pending, daemon=True).start()
     yield
 

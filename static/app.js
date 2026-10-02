@@ -252,7 +252,7 @@ function openProject(p) {
     if (p.has_result) {
       say(p.has4k ? "Your room is finished, in 2K and 4K." : "Here's your room.",
         (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") + "Hover over any wall to try another version or see it big." +
-          (p.prompt_note && p.prompt_source === "claude" ? "\n" + p.prompt_note : ""));
+          (p.prompt_note && S.status && S.status.claude ? "\n" + p.prompt_note : ""));
     } else {
       say("Looking good. Ready when you are.", trimmed
         ? "The bright frame is what the LED centre wall shows (2:1). The faded parts are trimmed off."
@@ -444,7 +444,7 @@ async function finishedJob(j) {
   if (j.state === "done") {
     celebrate();
     say(j.message || "Done!", (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") +
-      (j.kind === "make" && p.prompt_note ? p.prompt_note + "\n" : "") + "Hover over any wall to try another version or see it big.");
+      (j.kind === "make" && p.prompt_note && S.status && S.status.claude ? p.prompt_note + "\n" : "") + "Hover over any wall to try another version or see it big.");
   } else if (j.state === "error") say("Sorry, that didn't work.", friendly(j.error), "err");
   else if (j.state === "cancelled") say("Stopped.", "Nothing was changed.");
 }
