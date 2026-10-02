@@ -212,7 +212,7 @@ function openProject(p) {
   if (!S.polling) {
     if (p.has_result) {
       say(p.has4k ? "Your room is finished, in 2K and 4K." : "Here's your room.",
-        (p.summary ? p.summary + "\n" : "") + "Hover over any wall to try another version or see it big." + (p.prompt_note ? "\n" + p.prompt_note : ""));
+        (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") + "Hover over any wall to try another version or see it big." + (p.prompt_note ? "\n" + p.prompt_note : ""));
     } else {
       say("Looking good. Ready when you are.", trimmed
         ? "The bright frame is what the LED centre wall shows (2:1). The faded parts are trimmed off."
@@ -244,7 +244,8 @@ function updateActions() {
   $("btnDownload").hidden = !done || busy;
   $("btnAgain").hidden = !done || busy;
   $("btnCancel").hidden = !busy;
-  if (done) {
+  if (done && busy) $("dlHint").textContent = "";
+  else if (done) {
     $("btnDownload").href = `/api/projects/${p.name}/download`;
     $("btn4k").textContent = p.has4k ? "4K ready ✓  Make again" : "Approve & make 4K";
     $("dlHint").textContent = p.has4k ? "Download has the 2K and 4K files plus a picture of the whole room."
@@ -326,7 +327,7 @@ async function pollJob() {
         const ahead = j.queue_ahead > 0;
         say(j.stage + (j.stage.endsWith("…") ? "" : "…"),
           [ahead ? `Waiting in line: ${j.detail}. The painter is shared; it starts by itself.` : j.detail,
-            j.elapsed != null ? `${fmt(j.elapsed)} so far · usually 4–6 minutes` : ""].filter(Boolean).join("  ·  "), "busy");
+            j.elapsed != null ? `${fmt(j.elapsed)} so far · ${j.kind === "4k" ? "about a minute once it starts" : j.kind === "reroll" ? "usually 2–4 minutes" : "usually 4–6 minutes"}` : ""].filter(Boolean).join("  ·  "), "busy");
       } else {
         S.polling = false;
         for (const k of ORDER) face(k).classList.remove("painting", "waiting");
@@ -343,7 +344,7 @@ async function pollJob() {
         }
         if (j.state === "done") {
           celebrate();
-          say(j.message || "Done!", (S.project && S.project.summary ? S.project.summary + "\n" : "") +
+          say(j.message || "Done!", (S.project && S.project.summary && S.project.prompt_source === "claude" ? S.project.summary + "\n" : "") +
             (j.kind === "make" && S.project && S.project.prompt_note ? S.project.prompt_note + "\n" : "") +
             "Hover over any wall to try another version or see it big.");
         } else if (j.state === "error") say("Sorry, that didn't work.", j.error || "", "err");
