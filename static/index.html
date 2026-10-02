@@ -10,6 +10,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="app.css">
+<!-- three.js is only fetched when the "Real theatre" view is opened -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
 </head>
 <body>
 <div class="vignette" aria-hidden="true"></div>
@@ -101,6 +108,11 @@
         </div>
       </div>
       <div class="sweep" aria-hidden="true"></div>
+      <div id="real" class="real" hidden>
+        <div id="realCanvas" class="realcanvas" aria-label="The real theatre in 3D. Drag to look around, scroll to move closer."></div>
+        <p id="realMsg" class="realmsg" hidden></p>
+        <button id="btnResetView" class="btn ghost resetview">Reset view</button>
+      </div>
     </div>
     <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
 
@@ -108,6 +120,7 @@
       <div class="seg small" role="radiogroup" aria-label="View">
         <button class="on" data-view="3d" role="radio" aria-checked="true">3D room</button>
         <button data-view="flat" role="radio" aria-checked="false">Flat view</button>
+        <button data-view="real" role="radio" aria-checked="false">Real theatre</button>
       </div>
       <span class="hint" id="viewHint">Drag to turn the room</span>
     </div>
@@ -115,6 +128,15 @@
     <section class="console" aria-live="polite">
       <p id="status" class="status">Drop a picture onto the centre wall to begin.</p>
       <p id="substatus" class="substatus"></p>
+      <div id="pickRow" class="pick" hidden>
+        <span class="picklabel" id="pickLabel">What's in your picture?</span>
+        <div class="seg chips" id="sceneSeg" role="radiogroup" aria-labelledby="pickLabel"></div>
+        <div class="seg small" id="mediumSeg" role="radiogroup" aria-label="Is it a cartoon or a photo?">
+          <button data-medium="cartoon" role="radio" aria-checked="true">Cartoon</button>
+          <button data-medium="photo" role="radio" aria-checked="false">Photo</button>
+        </div>
+        <span class="hint" id="pickHint"></span>
+      </div>
       <div id="styleRow" class="seg" role="radiogroup" aria-label="Style" hidden>
         <button class="on" data-style="continue" role="radio" aria-checked="true"><b>Continue the scene</b><small>one picture all the way round</small></button>
         <button data-style="distinct" role="radio" aria-checked="false"><b>Distinct views</b><small>each wall its own view of the same world</small></button>

@@ -119,6 +119,14 @@ def compose_layout(s: dict, res: str = "2K") -> Path | None:
     return out
 
 
+def crop_url(s: dict) -> str:
+    """The 2:1 centre exactly as the LED shows it (1920x960), made once per project."""
+    f = PROJECTS / s["name"] / "centre_2k_input.png"
+    if not f.exists():
+        centre_2k(s).save(f)
+    return f"/projects/{s['name']}/centre_2k_input.png"
+
+
 def public(s: dict) -> dict:
     """What the page needs (no internals)."""
     d = PROJECTS / s["name"]
@@ -133,7 +141,8 @@ def public(s: dict) -> dict:
         }
     return {
         "name": s["name"], "title": s.get("title", s["name"]), "created": s.get("created"),
-        "style": s.get("style", "continue"), "original_url": f"/projects/{s['name']}/{s['original']}",
+        "style": s.get("style", "continue"), "scene_type": scene_of(s), "medium": s.get("medium") or s.get("medium_guess") or "cartoon",
+        "medium_guess": s.get("medium_guess"), "crop_url": crop_url(s), "original_url": f"/projects/{s['name']}/{s['original']}",
         "original_size": s["original_size"], "crop": s["crop"], "prompts": s.get("prompts"),
         "prompt_source": s.get("prompt_source"), "prompt_note": s.get("prompt_note", ""),
         "summary": (s.get("prompts") or {}).get("summary", ""), "pieces": pieces,
@@ -179,17 +188,25 @@ def cancelled() -> bool:
     return bool(JOB.get("cancel"))
 
 
+def scene_of(s: dict) -> str:
+    return s.get("scene_type") if s.get("scene_type") in P.SCENE_TYPES else P.DEFAULT_SCENE
+
+
+def gen_h(s: dict) -> int:
+    return P.SCENE_TYPES[scene_of(s)]["gen_h"]
+
+
 def build_preset(s: dict, comfy_centre: str) -> tuple[str, dict]:
     pr, seeds = s["prompts"], dict(s["seeds"])
     if s.get("style") == "distinct" and distinct_available():
         return "distinct", dict(
             centre=comfy_centre, tail=pr["tail"], scenes={"left": pr["left_scene"], "right": pr["right_scene"]},
             negs={"left": pr["neg"], "right": pr["neg"]}, ret=pr["ret"], ret_neg=pr.get("ret_neg") or P.RET_NEG,
-            clean=pr["clean"], seeds=seeds, make_4k=False)
+            clean=pr["clean"], seeds=seeds, gen_h=gen_h(s), make_4k=False)
     return "fullset", dict(
         centre=comfy_centre, lead=pr["lead"], tail=pr["tail"], neg=pr["neg"], clean=pr["clean"],
         scenes={"left": pr["left_scene"], "right": pr["right_scene"]}, ret=pr["ret"], seeds=seeds,
-        gen_h=960, make_4k=False, joint_returns=True)
+        gen_h=gen_h(s), make_4k=False, joint_returns=True)
 
 
 def seed_key(s: dict, piece: str) -> str:
@@ -322,23 +339,23 @@ def finish_4k(name: str, outs: dict, extra: dict) -> str:
 FINISH = {"make": finish_make, "reroll": finish_reroll, "4k": finish_4k}
 
 
-def job_make(name: str, style: str, use_prompts: dict | None):
+def job_make(name: str, style: str, use_prompts: dict | None, scene: str, medium: str):
     s = load(name)
-    s["style"] = style
+    s["style"], s["scene_type"], s["medium"] = style, scene, medium
     if use_prompts:
         report(stage="Using your words")
-        base = s.get("prompts") or P.template(style)
+        base = s.get("prompts") or P.template(style, scene, medium)
         base.update({k: v for k, v in use_prompts.items() if k in P.FIELDS and isinstance(v, str)})
         s["prompts"] = base
         s["prompt_note"] = "Painted with your edited prompts."
     else:
         report(stage="Looking at your picture")
         c = centre_2k(s)
-        gh = 960 if style != "distinct" else 800
+        gh = gen_h(s)
         top = c.crop((0, 0, 1920, gh))
         left, right = top.crop((0, 0, 640, gh)), top.crop((1280, 0, 1920, gh))
         report(stage="Writing the scene" if P.has_key() else "Writing the scene (template)")
-        pr, src, note = P.write(c, left, right, style)
+        pr, src, note = P.write(c, left, right, style, scene, medium)
         s["prompts"], s["prompt_source"], s["prompt_note"] = pr, src, note
     s.setdefault("seeds", dict(DEFAULT_SEEDS))
     save(s)
@@ -445,6 +462,7 @@ def app_js():
 @app.get("/api/status")
 def status():
     return {"claude": P.has_key(), "distinct": distinct_available(), "engine": comfy.is_running(),
+            "scene_types": {k: v["label"] for k, v in P.SCENE_TYPES.items()}, "default_scene": P.DEFAULT_SCENE,
             "model": P.MODEL}
 
 
@@ -484,9 +502,13 @@ async def new_project(file: UploadFile = File(...)):
     d.mkdir(parents=True)
     im.convert("RGB").save(d / "centre_original.png")
     w, h = im.size
+    try:
+        medium = P.guess_medium(im.convert("RGB").crop(crop_box(w, h)))
+    except Exception:
+        medium = "cartoon"
     s = {"name": name, "title": title, "created": datetime.now().isoformat(timespec="seconds"),
          "original": "centre_original.png", "original_filename": file.filename, "original_size": [w, h],
-         "crop": list(crop_box(w, h)), "style": "continue", "seeds": dict(DEFAULT_SEEDS), "versions": {},
+         "crop": list(crop_box(w, h)), "style": "continue", "scene_type": P.DEFAULT_SCENE, "medium_guess": medium, "seeds": dict(DEFAULT_SEEDS), "versions": {},
          "prompts": None}
     save(s)
     return public(s)
@@ -504,7 +526,9 @@ def make(name: str, body: dict):
     if style not in ("continue", "distinct") or (style == "distinct" and not distinct_available()):
         style = "continue"
     use_prompts = body.get("prompts") if body.get("use_my_prompts") else None
-    start_job(name, "make", job_make, name, style, use_prompts)
+    scene = body.get("scene_type") if body.get("scene_type") in P.SCENE_TYPES else P.DEFAULT_SCENE
+    medium = body.get("medium") if body.get("medium") in P.MEDIUMS else "cartoon"
+    start_job(name, "make", job_make, name, style, use_prompts, scene, medium)
     return {"ok": True}
 
 

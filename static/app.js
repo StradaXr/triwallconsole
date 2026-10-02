@@ -16,7 +16,7 @@ const STAGE_PIECES = {
   "Painting the left wall": ["left"], "Painting the right wall": ["right"],
   "Painting the left corner": ["LR"], "Painting the right corner": ["RR"],
 };
-const S = { status: null, project: null, style: "continue", view: "3d", polling: false, lb: null,
+const S = { status: null, project: null, style: "continue", scene: "street", medium: "cartoon", view: "3d", polling: false, lb: null,
   orbit: { ry: -12, rx: -5 }, shown: {} };
 const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -67,16 +67,51 @@ function applyOrbit() {
 function setView(v) {
   S.view = v;
   document.body.classList.toggle("flat", v === "flat");
+  $("stage").classList.toggle("view-real", v === "real");
   document.querySelectorAll("[data-view]").forEach((b) => { const on = b.dataset.view === v; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
-  $("viewHint").textContent = v === "flat" ? "Laid out flat at the LED positions" : "Drag to turn the room";
+  $("viewHint").textContent = { flat: "Laid out flat at the LED positions", real: "The real theatre: drag to look around, scroll to move" }[v] || "Drag to turn the room";
+  $("real").hidden = v !== "real";
+  if (v === "real") openReal(); else if (R.mod) R.mod.stop();
   fit(); applyOrbit();
+}
+
+// ---------------------------------------------------------------- "Real theatre" (three.js, loaded on first use)
+const R = { mod: null, loading: null };
+function realPieces() {
+  const out = {};
+  for (const k of ORDER) out[k] = S.shown[k] || null;
+  if (!out.centre && S.project) out.centre = S.project.pieces.centre.url || S.project.crop_url || null;
+  return out;
+}
+function realSync() { if (R.mod && S.view === "real") R.mod.show(realPieces()); }
+async function openReal() {
+  const msg = $("realMsg");
+  if (!R.mod) {
+    msg.hidden = false; msg.textContent = "Building the theatre…";
+    R.loading = R.loading || (async () => {
+      const mod = await import("/static/theatre-view.js");
+      await mod.init($("realCanvas"), (piece) => openLightbox(piece));
+      return mod;
+    })();
+    try { R.mod = await R.loading; }
+    catch (e) {
+      R.loading = null;
+      msg.textContent = (e && e.message && e.message.includes("WebGL")) ? e.message
+        : "Couldn't open the real theatre view. It needs an internet connection the first time (to fetch the 3D viewer). The 3D room and Flat view still work.";
+      console.error(e);
+      return;
+    }
+    msg.hidden = true;
+  }
+  if (S.view !== "real") return;
+  R.mod.start(); realSync();
 }
 
 function wireOrbit() {
   const st = $("stage");
   let drag = null;
   st.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button, label, a, input")) return;
+    if (e.target.closest("button, label, a, input, #real")) return;
     if (S.view === "flat") return;
     drag = { x: e.clientX, y: e.clientY, ry: S.orbit.ry, rx: S.orbit.rx, moved: false };
     st.setPointerCapture(e.pointerId);
@@ -159,6 +194,7 @@ function light(k, url, animate) {
   const f = face(k), img = f.querySelector(".surface img");
   if (S.shown[k] === url) return;
   S.shown[k] = url;
+  realSync();
   f.classList.remove("painting", "waiting", "reveal");
   const go = () => {
     f.classList.add("lit");
@@ -176,6 +212,7 @@ function renderRoom(p) {
     if (pc.url) light(k, pc.url, false);
     else if (k !== "centre") { face(k).classList.remove("lit"); S.shown[k] = null; }
   }
+  realSync();
 }
 
 function celebrate() {
@@ -206,6 +243,8 @@ function openProject(p) {
   const trimmed = showCentre(p);
   renderRoom(p);
   setStyle(p.style || "continue");
+  setScene(p.scene_type || (S.status && S.status.default_scene) || "street");
+  setMedium(p.medium || "cartoon");
   renderPrompts(p);
   $("btnAdvanced").disabled = !p.prompts;
   updateActions();
@@ -230,6 +269,36 @@ function newRoom() {
   document.querySelectorAll(".filmcard").forEach((c) => c.classList.remove("current"));
 }
 
+function renderScenes() {
+  const box = $("sceneSeg"), types = (S.status && S.status.scene_types) || {};
+  if (box.childElementCount === Object.keys(types).length) return;
+  box.innerHTML = "";
+  for (const [k, label] of Object.entries(types)) {
+    const b = document.createElement("button");
+    b.dataset.scene = k; b.textContent = label; b.setAttribute("role", "radio");
+    b.onclick = () => setScene(k);
+    box.appendChild(b);
+  }
+  setScene(S.scene);
+}
+function setScene(k) {
+  S.scene = k;
+  document.querySelectorAll("[data-scene]").forEach((b) => { const on = b.dataset.scene === k; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+  pickHint();
+}
+function setMedium(m) {
+  S.medium = m;
+  document.querySelectorAll("[data-medium]").forEach((b) => { const on = b.dataset.medium === m; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+  pickHint();
+}
+function pickHint() {
+  const p = S.project; if (!p) return;
+  const guess = p.medium_guess ? `It looks like a ${p.medium_guess} to us. Is that right? ` : "";
+  $("pickHint").textContent = p.has_result
+    ? "These choices are used the next time you paint the whole room."
+    : guess + "This picks the right words for the painter" + (S.status && S.status.claude ? " and tells Claude what it's looking at." : ".");
+}
+
 function setStyle(s) {
   if (s === "distinct" && !(S.status && S.status.distinct)) s = "continue";
   S.style = s;
@@ -240,6 +309,7 @@ function updateActions() {
   const p = S.project, busy = S.polling, done = p && p.has_result;
   $("btnMake").hidden = !!done || busy; $("btnMake").disabled = !p;
   $("styleRow").hidden = !(S.status && S.status.distinct) || !!done || busy || !p;
+  $("pickRow").hidden = !p || busy;
   $("btn4k").hidden = !done || busy;
   $("btnDownload").hidden = !done || busy;
   $("btnAgain").hidden = !done || busy;
@@ -282,7 +352,7 @@ async function startJob(path, data, painting = []) {
 
 function make(useMine) {
   if (!S.project) return;
-  const data = { style: S.style };
+  const data = { style: S.style, scene_type: S.scene, medium: S.medium };
   if (useMine) {
     data.use_my_prompts = true; data.prompts = {};
     for (const [k] of FIELDS) { const t = $("t_" + k); if (t) data.prompts[k] = t.value; }
@@ -325,7 +395,7 @@ async function pollJob() {
         }
         for (const [k, url] of Object.entries(j.live || {})) if (k !== "centre") light(k, url, true);
         const ahead = j.queue_ahead > 0;
-        say(j.stage + (j.stage.endsWith("…") ? "" : "…"),
+        say(j.stage,
           [ahead ? `Waiting in line: ${j.detail}. The painter is shared; it starts by itself.` : j.detail,
             j.elapsed != null ? `${fmt(j.elapsed)} so far · ${j.kind === "4k" ? "about a minute once it starts" : j.kind === "reroll" ? "usually 2–4 minutes" : "usually 4–6 minutes"}` : ""].filter(Boolean).join("  ·  "), "busy");
       } else {
@@ -395,6 +465,7 @@ async function loadStatus() {
     const e = $("chipEngine");
     e.textContent = s.engine ? "Painter ready" : "Painter starts when needed";
     e.className = "chip " + (s.engine ? "ok" : "");
+    renderScenes();
     updateActions();
     return true;
   } catch (e) { return false; }
@@ -439,11 +510,13 @@ function wire() {
 
   document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => setView(b.dataset.view));
   document.querySelectorAll("[data-style]").forEach((b) => b.onclick = () => setStyle(b.dataset.style));
+  document.querySelectorAll("[data-medium]").forEach((b) => b.onclick = () => setMedium(b.dataset.medium));
   $("btnMake").onclick = () => make(false);
   $("btnAgain").onclick = () => { S.project.has_result = false; updateActions(); say("Paint the whole room again?", "Pick a style and press “Make my walls”. Claude will look at your picture again."); };
   $("btn4k").onclick = () => startJob(`/api/projects/${S.project.name}/make4k`, {});
   $("btnCancel").onclick = () => post("/api/job/cancel");
   $("btnNew").onclick = newRoom;
+  $("btnResetView").onclick = () => R.mod && R.mod.reset();
   $("btnAdvanced").onclick = openPanel;
   $("panelClose").onclick = closePanel;
   $("scrim").onclick = closePanel;

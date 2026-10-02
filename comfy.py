@@ -170,7 +170,7 @@ def run(api: dict, report, cancel_flag=None, timeout=3 * 3600, on_image=None, on
             return None
         return min(0.99, (len(done_heavy) + cur["frac"]) / len(heavy_ids))
 
-    report(stage="Waiting for the painter", detail="", fraction=0.0)
+    report(stage="Sending your room to the painter", detail="", fraction=0.0)
     deadline, last_poll, started = time.time() + timeout, 0.0, False
     try:
         while time.time() < deadline:
@@ -248,8 +248,10 @@ def run(api: dict, report, cancel_flag=None, timeout=3 * 3600, on_image=None, on
                     else:
                         ids = [x[1] for x in pending]
                         ahead = (ids.index(prompt_id) if prompt_id in ids else 0) + len(running)
-                        report(stage="Waiting for the painter",
-                               detail=(f"{ahead} other job{'s' if ahead != 1 else ''} ahead of you" if ahead else ""),
+                        # The painter is shared: say plainly that someone else's job is running, not that we're stuck.
+                        busy = "another job is running" if running else "about to start"
+                        report(stage=f"Waiting for the painter ({busy})",
+                               detail=(f"{ahead} job{'s' if ahead != 1 else ''} ahead of you" if ahead else ""),
                                queue_ahead=ahead)
         raise RuntimeError("Gave up waiting for the painter after 3 hours.")
     finally:

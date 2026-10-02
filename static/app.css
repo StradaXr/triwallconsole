@@ -223,3 +223,19 @@ b { font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- "What's in your picture?" picker */
+.pick { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; justify-content: center; max-width: 900px; }
+.picklabel { font: 600 15px var(--display); color: var(--ink); }
+.seg.chips button { padding: 7px 14px; font-size: 13.5px; }
+.seg.chips button.on { color: #160f1f; background: var(--grad); box-shadow: none; }
+.pick .hint { flex-basis: 100%; text-align: center; }
+
+/* ---------- "Real theatre" view (three.js, loaded on demand) */
+.real { position: absolute; inset: 0; z-index: 3; border-radius: 24px; overflow: hidden; background: radial-gradient(70% 70% at 50% 40%, rgba(var(--spill), .10), transparent 75%), #07060b; cursor: grab; }
+.real:active { cursor: grabbing; }
+.realcanvas { position: absolute; inset: 0; }
+.realcanvas canvas { display: block; }
+.realmsg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; margin: 0; color: var(--muted); font-size: 15px; }
+.resetview { position: absolute; right: 14px; bottom: 14px; background: rgba(11, 10, 16, .7); backdrop-filter: blur(4px); font-size: 13px; padding: 7px 14px; }
+.view-real .rig, .view-real .spill { visibility: hidden; }
