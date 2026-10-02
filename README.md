@@ -25,10 +25,14 @@ running yet, the studio starts it for you.
    choose a file. The centre LED is 2:1 (twice as wide as it is tall). If your
    picture has a different shape, a bright frame shows what will be on the wall,
    and the faded parts are trimmed off.
-2. Pick a style, if the choice is shown:
+2. Answer **"What's in your picture?"**: Room, Street & town, City & water, Nature
+   or Sky only, and whether it's a **Cartoon** or a **Photo**. The studio guesses
+   cartoon or photo for you; just check it. This picks the right words for the
+   painter, which matters most when Claude isn't set up.
+3. Pick a style, if the choice is shown:
    - **Continue the scene**: one picture runs all the way around the room.
    - **Distinct views**: each side wall is its own view of the same world.
-3. Press **Make my walls**. Claude looks at your picture and writes the scene, then
+4. Press **Make my walls**. Claude looks at your picture and writes the scene, then
    the painter paints each wall. The walls light up on the 3D room as they finish.
    It usually takes **4–6 minutes**. The painter is shared, so sometimes you'll
    wait in line first; it starts by itself.
@@ -37,6 +41,9 @@ running yet, the studio starts it for you.
 
 - **Drag** the room to turn it. **Flat view** shows the walls laid out exactly as
   they sit on the LEDs.
+- **Real theatre** shows your pictures on the actual theatre model, seen from
+  where the audience sits. Drag to look around, scroll to move, and press
+  **Reset view** to go back. It needs an internet connection the first time.
 - **Hover over any wall** and choose:
   - **Try another version** to repaint just that wall or corner. A corner is painted
     together with its wall in "Continue the scene", so they change together.

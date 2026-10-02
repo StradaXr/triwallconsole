@@ -24,11 +24,12 @@ import threading
 import time
 import traceback
 import zipfile
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 
@@ -436,12 +437,14 @@ def resume_pending():
 
 
 # ----------------------------------------------------------------------------- web app
-app = FastAPI(title="Tri-Wall Studio")
-
-
-@app.on_event("startup")
-def _startup():
+@asynccontextmanager
+async def lifespan(_app):
+    # Pick up any job that was still queued when the studio last closed.
     threading.Thread(target=resume_pending, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Tri-Wall Studio", lifespan=lifespan)
 
 
 @app.get("/")

@@ -97,7 +97,7 @@ async function openReal() {
     catch (e) {
       R.loading = null;
       msg.textContent = (e && e.message && e.message.includes("WebGL")) ? e.message
-        : "Couldn't open the real theatre view. It needs an internet connection the first time (to fetch the 3D viewer). The 3D room and Flat view still work.";
+        : "Couldn't open the real theatre view. The 3D room and Flat view still work.";
       console.error(e);
       return;
     }
@@ -224,7 +224,6 @@ function celebrate() {
 // ================================================================ projects
 async function upload(file) {
   if (!file || !file.type.startsWith("image/")) { say("That doesn't look like a picture.", "Try a PNG or JPG file.", "err"); return; }
-  if (S.polling) return;
   say("Hanging your picture on the wall…");
   const fd = new FormData(); fd.append("file", file);
   try {
@@ -232,7 +231,7 @@ async function upload(file) {
     const p = await api("/api/projects", { method: "POST", body: fd });
     openProject(p);
     loadFilm();
-  } catch (e) { say("Couldn't use that picture.", e.message, "err"); }
+  } catch (e) { say("Couldn't use that picture.", friendly(e.message), "err"); }
 }
 
 function openProject(p) {
@@ -248,7 +247,8 @@ function openProject(p) {
   renderPrompts(p);
   $("btnAdvanced").disabled = !p.prompts;
   updateActions();
-  if (!S.polling) {
+  if (viewingJob()) showJobProgress(S.job);
+  else {
     if (p.has_result) {
       say(p.has4k ? "Your room is finished, in 2K and 4K." : "Here's your room.",
         (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") + "Hover over any wall to try another version or see it big." + (p.prompt_note ? "\n" + p.prompt_note : ""));
@@ -262,7 +262,6 @@ function openProject(p) {
 }
 
 function newRoom() {
-  if (S.polling) return;
   S.project = null; store("tws.project", "");
   clearRoom(); renderPrompts(null); $("btnAdvanced").disabled = true; updateActions();
   say("Drop a picture onto the centre wall to begin.", "Any picture works. It's trimmed to 2:1 for the centre LED.");
@@ -306,22 +305,29 @@ function setStyle(s) {
 }
 
 function updateActions() {
-  const p = S.project, busy = S.polling, done = p && p.has_result;
-  $("btnMake").hidden = !!done || busy; $("btnMake").disabled = !p;
-  $("styleRow").hidden = !(S.status && S.status.distinct) || !!done || busy || !p;
-  $("pickRow").hidden = !p || busy;
-  $("btn4k").hidden = !done || busy;
-  $("btnDownload").hidden = !done || busy;
-  $("btnAgain").hidden = !done || busy;
-  $("btnCancel").hidden = !busy;
-  if (done && busy) $("dlHint").textContent = "";
-  else if (done) {
+  const p = S.project, here = viewingJob(), elsewhere = jobRunning() && !here, done = p && p.has_result;
+  $("btnMake").hidden = !!done || here; $("btnMake").disabled = !p || elsewhere;
+  $("styleRow").hidden = !(S.status && S.status.distinct) || !!done || here || !p;
+  $("pickRow").hidden = !p || here;
+  $("btn4k").hidden = !done || here; $("btn4k").disabled = elsewhere;
+  $("btnDownload").hidden = !done || here;
+  $("btnAgain").hidden = !done || here; $("btnAgain").disabled = elsewhere;
+  $("btnCancel").hidden = !here;
+  ["btnRepaint", "btnRewrite"].forEach((id) => $(id).disabled = jobRunning());
+  $("lbReroll").disabled = jobRunning();
+  if (done) {
     $("btnDownload").href = `/api/projects/${p.name}/download`;
     $("btn4k").textContent = p.has4k ? "4K ready ✓  Make again" : "Approve & make 4K";
-    $("dlHint").textContent = p.has4k ? "Download has the 2K and 4K files plus a picture of the whole room."
-      : "Download has the 2K files plus a picture of the whole room. Approve to add 4K.";
-  } else $("dlHint").textContent = busy ? "" : (p ? "Usually 4–6 minutes. Claude writes the scene, then the painter paints the walls and corners." : "");
-  $("stage").classList.toggle("room-busy", busy);
+  }
+  let hint = "";
+  if (elsewhere) hint = `The painter is busy with “${S.jobTitle || "another room"}”. The painting buttons come back when it's done.`;
+  else if (here) hint = "";
+  else if (done) hint = p.has4k ? "Download has the 2K and 4K files plus a picture of the whole room."
+    : "Download has the 2K files plus a picture of the whole room. Approve to add 4K.";
+  else if (p) hint = "Usually 4–6 minutes. " + (S.status && S.status.claude ? "Claude writes the scene, then the painter paints the walls and corners."
+    : "The painter paints both walls and both corners.");
+  $("dlHint").textContent = hint;
+  $("stage").classList.toggle("room-busy", jobRunning());
 }
 
 function renderPrompts(p) {
@@ -344,10 +350,13 @@ function renderPrompts(p) {
 async function startJob(path, data, painting = []) {
   try {
     await post(path, data);
+    S.job = { state: "running", project: S.project.name, stage: "Getting ready", kind: "" };
+    S.jobTitle = S.project.title;
     for (const k of painting) { face(k).classList.add("waiting"); }
+    renderJobChip(); updateActions();
     closePanel();
     pollJob();
-  } catch (e) { say("That didn't start.", e.message, "err"); }
+  } catch (e) { say("That didn't start.", friendly(e.message), "err"); }
 }
 
 function make(useMine) {
@@ -374,57 +383,112 @@ function reroll(k) {
 
 function fmt(s) { const m = Math.floor(s / 60), r = s % 60; return `${m}:${String(r).padStart(2, "0")}`; }
 
+// The painter runs one job at a time in the background. Any room can be opened while it runs; only the room being
+// painted shows the live progress. Painting buttons on other rooms wait until the painter is free.
+const jobRunning = () => !!(S.job && S.job.state === "running");
+const viewingJob = () => jobRunning() && S.project && S.project.name === S.job.project;
+
+function renderJobChip() {
+  const chip = $("jobChip");
+  if (!jobRunning()) { chip.hidden = true; return; }
+  chip.hidden = false;
+  chip.textContent = `Painting: ${S.jobTitle || "a room"}` + (S.job.stage ? ` · ${S.job.stage.replace(/\s*\(.*\)$/, "")}` : "");
+  chip.classList.toggle("here", viewingJob());
+}
+
+function toast(text, action) {
+  const t = $("toast");
+  t.querySelector("span").textContent = text;
+  const b = t.querySelector("button");
+  b.hidden = !action; if (action) { b.textContent = action.label; b.onclick = () => { t.hidden = true; action.run(); }; }
+  t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 15000);
+}
+
+function showJobProgress(j) {
+  const cur = STAGE_PIECES[j.stage] || [];
+  for (const k of ["left", "LR", "RR", "right"]) {
+    const f = face(k);
+    if (f.classList.contains("lit")) continue;
+    f.classList.toggle("painting", cur.includes(k));
+    f.classList.add("waiting");
+  }
+  for (const [k, url] of Object.entries(j.live || {})) if (k !== "centre") light(k, url, true);
+  const ahead = j.queue_ahead > 0;
+  const usual = j.kind === "4k" ? "about a minute once it starts" : j.kind === "reroll" ? "usually 2–4 minutes" : "usually 4–6 minutes";
+  say(j.stage,
+    [ahead ? `Waiting in line: ${j.detail}. The painter is shared with other work; your room starts by itself.` : j.detail,
+      j.elapsed != null ? `${fmt(j.elapsed)} so far · ${usual}` : "",
+      "You can open your other rooms while this paints."].filter(Boolean).join("  ·  "), "busy");
+}
+
+async function finishedJob(j) {
+  const mine = S.project && S.project.name === j.project;
+  for (const k of ORDER) face(k).classList.remove("painting", "waiting");
+  if (!mine) {
+    const title = S.jobTitle || "your room";
+    if (j.state === "done") toast(`${title}: ${j.message || "done"}`, { label: "Open it", run: () => openByName(j.project) });
+    else if (j.state === "error") toast(`${title}: that didn't work. Open the room to see why.`, { label: "Open it", run: () => openByName(j.project) });
+    updateActions();
+    return;
+  }
+  const p = await api(`/api/projects/${j.project}`);
+  let delay = 0;  // reveal anything that hasn't lit up yet, one by one
+  for (const k of ["left", "LR", "RR", "right"]) {
+    const pc = p.pieces[k];
+    if (j.state === "done" && pc.url && S.shown[k] !== pc.url) { setTimeout(() => light(k, pc.url, true), delay); delay += reduceMotion ? 0 : 350; }
+  }
+  await sleep(delay);
+  openProject(p);
+  if (j.state === "done") {
+    celebrate();
+    say(j.message || "Done!", (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") +
+      (j.kind === "make" && p.prompt_note ? p.prompt_note + "\n" : "") + "Hover over any wall to try another version or see it big.");
+  } else if (j.state === "error") say("Sorry, that didn't work.", friendly(j.error), "err");
+  else if (j.state === "cancelled") say("Stopped.", "Nothing was changed.");
+}
+
+async function openByName(name) {
+  try { openProject(await api(`/api/projects/${name}`)); }
+  catch (e) { say("That room couldn't be opened.", friendly(e.message), "err"); }
+}
+
 async function pollJob() {
   if (S.polling) return;
-  S.polling = true; updateActions();
-  let painted = new Set();
+  S.polling = true;
+  let lastProject = null;
   try {
     for (;;) {
       let j;
       try { j = await api("/api/job"); } catch (e) { await sleep(2500); continue; }
-      if (j.project && (!S.project || S.project.name !== j.project)) {
-        try { openProject(await api(`/api/projects/${j.project}`)); } catch (e) { /* ignore */ }
+      S.job = j;
+      if (j.project && j.project !== lastProject) {
+        lastProject = j.project;
+        try { S.jobTitle = (await api(`/api/projects/${j.project}`)).title; } catch (e) { S.jobTitle = ""; }
       }
       if (j.state === "running") {
-        const cur = STAGE_PIECES[j.stage] || [];
-        for (const k of ["left", "LR", "RR", "right"]) {
-          const f = face(k);
-          if (f.classList.contains("lit")) continue;
-          f.classList.toggle("painting", cur.includes(k));
-          if (cur.includes(k)) painted.add(k);
-        }
-        for (const [k, url] of Object.entries(j.live || {})) if (k !== "centre") light(k, url, true);
-        const ahead = j.queue_ahead > 0;
-        say(j.stage,
-          [ahead ? `Waiting in line: ${j.detail}. The painter is shared; it starts by itself.` : j.detail,
-            j.elapsed != null ? `${fmt(j.elapsed)} so far · ${j.kind === "4k" ? "about a minute once it starts" : j.kind === "reroll" ? "usually 2–4 minutes" : "usually 4–6 minutes"}` : ""].filter(Boolean).join("  ·  "), "busy");
+        if (viewingJob()) showJobProgress(j);
+        renderJobChip(); updateActions();
       } else {
-        S.polling = false;
-        for (const k of ORDER) face(k).classList.remove("painting", "waiting");
-        if (S.project) {
-          const p = await api(`/api/projects/${S.project.name}`);
-          // reveal anything that hasn't lit up yet, one by one
-          let delay = 0;
-          for (const k of ["left", "LR", "RR", "right"]) {
-            const pc = p.pieces[k];
-            if (pc.url && S.shown[k] !== pc.url && j.state === "done") { setTimeout(() => light(k, pc.url, true), delay); delay += reduceMotion ? 0 : 350; }
-          }
-          await sleep(delay);
-          openProject(p);
-        }
-        if (j.state === "done") {
-          celebrate();
-          say(j.message || "Done!", (S.project && S.project.summary && S.project.prompt_source === "claude" ? S.project.summary + "\n" : "") +
-            (j.kind === "make" && S.project && S.project.prompt_note ? S.project.prompt_note + "\n" : "") +
-            "Hover over any wall to try another version or see it big.");
-        } else if (j.state === "error") say("Sorry, that didn't work.", j.error || "", "err");
-        else if (j.state === "cancelled") say("Stopped.", "Nothing was changed.");
-        loadFilm(); loadStatus();
+        S.polling = false; renderJobChip();
+        if (j.state !== "idle") await finishedJob(j);
+        loadFilm(); loadStatus(); updateActions();
         break;
       }
       await sleep(1500);
     }
-  } finally { S.polling = false; updateActions(); }
+  } finally { S.polling = false; renderJobChip(); updateActions(); }
+}
+
+// Plain words for the errors people can actually hit.
+function friendly(msg) {
+  const m = String(msg || "");
+  if (/already being painted/i.test(m)) return "The painter is busy with another room. Try again when it's finished.";
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "The studio isn't responding. Is the black Tri-Wall Studio window still open?";
+  if (/wasn't found|didn't come up/i.test(m)) return "The painting engine (ComfyUI) couldn't be started. " + m;
+  if (/rejected the recipe|hit a problem/i.test(m)) return "The painter couldn't finish this one. Please try again. (Details: " + m.slice(0, 240) + ")";
+  if (/lost this job/i.test(m)) return "The painter was restarted and lost this job. Please press the button again.";
+  return m.length > 300 ? m.slice(0, 300) + "…" : m;
 }
 
 // ================================================================ big view
@@ -437,7 +501,7 @@ function openLightbox(k) {
   $("lbSize").textContent = `2K ${pc.w}×${pc.h}` + (pc.url4k ? `  ·  4K ${pc.w * 2}×${pc.h * 2} ready` : "");
   $("lb4k").hidden = !pc.url4k; if (pc.url4k) $("lb4k").href = pc.url4k;
   $("lbReroll").hidden = k === "centre" || !p.has_result;
-  $("lbReroll").disabled = S.polling;
+  $("lbReroll").disabled = jobRunning();
   $("lightbox").hidden = false; $("lbClose").focus();
 }
 function closeLightbox() { $("lightbox").hidden = true; S.lb = null; }
@@ -484,7 +548,7 @@ async function loadFilm() {
       b.innerHTML = `<div class="mini ${h.done ? "" : "raw"}"></div><strong></strong><span>${when}${h.has4k ? " · 4K" : h.done ? "" : " · not painted yet"}</span>`;
       b.querySelector(".mini").style.backgroundImage = `url("${h.thumb}")`;
       b.querySelector("strong").textContent = h.title;
-      b.onclick = async () => { if (S.polling) return; openProject(await api(`/api/projects/${h.name}`)); };
+      b.onclick = () => openByName(h.name);
       film.appendChild(b);
     }
   } catch (e) { /* ignore */ }
@@ -498,13 +562,14 @@ function wire() {
   window.addEventListener("dragover", (e) => { e.preventDefault(); st.classList.add("over"); });
   window.addEventListener("dragleave", (e) => { if (!e.relatedTarget) st.classList.remove("over"); });
   window.addEventListener("drop", (e) => { e.preventDefault(); st.classList.remove("over"); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
+  $("jobChip").onclick = () => S.job && S.job.project && openByName(S.job.project);
   st.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === st && !S.project) { e.preventDefault(); file.click(); } });
 
   // hover buttons on the walls
   for (const k of ORDER) {
     const f = face(k), surf = f.querySelector(":scope > .surface");
     surf.querySelectorAll(".hb.view").forEach((b) => b.onclick = (e) => { e.stopPropagation(); openLightbox(k); });
-    surf.querySelectorAll(".hb.again").forEach((b) => b.onclick = (e) => { e.stopPropagation(); if (!S.polling) reroll(k); });
+    surf.querySelectorAll(".hb.again").forEach((b) => b.onclick = (e) => { e.stopPropagation(); if (!jobRunning()) reroll(k); });
     surf.addEventListener("dblclick", (e) => { if (S.project && S.project.has_result) { e.stopPropagation(); openLightbox(k); } });
   }
 
@@ -547,12 +612,11 @@ async function init() {
   await loadFilm();
   let j = null;
   try { j = await api("/api/job"); } catch (e) { /* ignore */ }
-  if (j && j.state === "running") { pollJob(); }
-  else {
-    const last = store("tws.project");
-    if (last) { try { openProject(await api(`/api/projects/${last}`)); } catch (e) { newRoom(); } }
-    else newRoom();
-  }
+  if (j && j.state === "running") { S.job = j; }
+  const last = store("tws.project") || (S.job && S.job.project);
+  if (last) { try { openProject(await api(`/api/projects/${last}`)); } catch (e) { newRoom(); } }
+  else newRoom();
+  if (jobRunning()) pollJob();
   setInterval(loadStatus, 30000);
 }
 init();

@@ -1,4 +1,11 @@
 /* Tri-Wall Studio · dark stage theme */
+/* Fonts are bundled (static/vendor/fonts, SIL Open Font License) so the studio works offline. */
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 500; font-display: swap; src: url("/static/vendor/fonts/space-grotesk-500.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 600; font-display: swap; src: url("/static/vendor/fonts/space-grotesk-600.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-style: normal; font-weight: 700; font-display: swap; src: url("/static/vendor/fonts/space-grotesk-700.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap; src: url("/static/vendor/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap; src: url("/static/vendor/fonts/inter-500.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap; src: url("/static/vendor/fonts/inter-600.woff2") format("woff2"); }
 :root {
   --bg: #0b0a10;
   --bg2: #13111b;
@@ -141,7 +148,7 @@ b { font-weight: 600; }
 .hoverbar { position: absolute; left: 50%; bottom: 10%; transform: translateX(-50%); display: flex; gap: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .hoverbar.narrow { flex-direction: column; bottom: 8%; gap: 6px; }
 .room-done .surface:hover .hoverbar, .room-done .surface:focus-within .hoverbar { opacity: 1; pointer-events: auto; }
-.room-busy .hoverbar { display: none; }
+.room-busy .hb.again { display: none; }
 .hb { font: 600 max(12px, calc(var(--u) * 46)) var(--body); white-space: nowrap; color: #160f1f; background: rgba(255, 255, 255, .92); border: none; border-radius: 999px; padding: .5em 1.1em; cursor: pointer; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); }
 .hb.again { background: var(--grad); }
 .hoverbar.narrow .hb { padding: .45em .6em; }
@@ -239,3 +246,10 @@ b { font-weight: 600; }
 .realmsg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; margin: 0; color: var(--muted); font-size: 15px; }
 .resetview { position: absolute; right: 14px; bottom: 14px; background: rgba(11, 10, 16, .7); backdrop-filter: blur(4px); font-size: 13px; padding: 7px 14px; }
 .view-real .rig, .view-real .spill { visibility: hidden; }
+
+/* ---------- background job indicator + toast */
+.chip.job { cursor: pointer; font: inherit; font-size: 12.5px; color: var(--ink); border-color: rgba(255, 181, 71, .45); background: rgba(255, 181, 71, .08); max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+.chip.job::before { background: var(--a2); box-shadow: 0 0 8px var(--a2); animation: breathe 1.6s ease-in-out infinite; }
+.chip.job.here { border-color: var(--line2); background: rgba(255, 255, 255, .03); }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 45; display: flex; gap: 14px; align-items: center; padding: 12px 14px 12px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line2); box-shadow: 0 18px 50px rgba(0, 0, 0, .55); max-width: calc(100vw - 32px); }
+.toast .btn { padding: 8px 14px; font-size: 14px; }

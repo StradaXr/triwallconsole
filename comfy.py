@@ -78,7 +78,7 @@ def build_api(workflow: str, preset: dict) -> dict:
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", COMFY_URL=COMFY_URL, COMFY_DIR=str(COMFY_DIR))
     req = json.dumps({"workflow": workflow, "preset": preset, "claude_mcp": str(CLAUDE_MCP)})
     last = ""
-    for attempt in range(3):  # the builders are edited in parallel; a half-saved file can fail once
+    for _ in range(3):  # the builders are edited in parallel; a half-saved file can fail once
         p = subprocess.run([sys.executable, "-B", str(HERE / "build_graph.py")], input=req, capture_output=True,
                            text=True, encoding="utf-8", env=env, cwd=str(HERE), timeout=180,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -97,10 +97,6 @@ def swap_seeds(api: dict, swap: dict) -> int:
             v["inputs"]["seed"] = swap[v["inputs"]["seed"]]
             n += 1
     return n
-
-
-def ksampler_seeds(api: dict) -> set:
-    return {v["inputs"].get("seed") for v in api.values() if v["class_type"] == "KSampler"}
 
 
 # ----------------------------------------------------------------------------- progress wording

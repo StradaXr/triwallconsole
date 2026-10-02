@@ -6,15 +6,12 @@
 <title>Tri-Wall Studio</title>
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 8l7 3v12l-7 3z' fill='%23ff5f9e'/%3E%3Crect x='10' y='6' width='12' height='16' rx='1' fill='%23ffb547'/%3E%3Cpath d='M30 8l-7 3v12l7 3z' fill='%237c6bff'/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="app.css">
-<!-- three.js is only fetched when the "Real theatre" view is opened -->
+<!-- three.js r170 (MIT, static/vendor/three/LICENSE) is bundled and only loaded when "Real theatre" is opened -->
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  "three": "/static/vendor/three/build/three.module.js",
+  "three/addons/": "/static/vendor/three/examples/jsm/"
 } }
 </script>
 </head>
@@ -48,6 +45,7 @@
       </div>
     </div>
     <div class="topright">
+      <button id="jobChip" class="chip job" hidden title="Open the room being painted"></button>
       <span id="chipClaude" class="chip" title="Who writes the words the painter follows">…</span>
       <span id="chipEngine" class="chip">…</span>
       <button id="btnAdvanced" class="btn ghost" aria-controls="panel" aria-expanded="false" disabled>Advanced</button>
@@ -193,6 +191,8 @@
     </div>
   </div>
 </div>
+
+<div id="toast" class="toast" role="status" hidden><span></span><button class="btn primary"></button></div>
 
 <script src="app.js"></script>
 </body>

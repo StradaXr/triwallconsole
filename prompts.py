@@ -27,7 +27,6 @@ _COMMON_NEG = ("blurry, low quality, gibberish text, writing on signs, letters, 
                "people, crowd")
 CARTOON_NEG = "photograph, photorealistic, realistic, 3D render, CGI, noise, grain, " + _COMMON_NEG
 PHOTO_NEG = "cartoon, illustration, drawing, painting, anime, 3D render, CGI, plastic, oversaturated, " + _COMMON_NEG
-GENERIC_NEG = _COMMON_NEG
 # Distinct walls: the corner returns are inpainted from both edges; keep their negative generic.
 RET_NEG = ("seam, vertical line, white bar, white stripe, divider, border, frame, split screen, collage, blurry, "
            "low quality")
