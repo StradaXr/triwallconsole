@@ -15,9 +15,10 @@ quietly in the background and you never have to open it.
    open while you work, and close it when you're finished.
 
 The first start can take a minute while it gets ready. If the painting engine isn't
-running yet, the studio starts it for you.
+running yet, the studio starts it for you. Double-clicking the start file again while
+the studio is running just opens it in your browser.
 
-> Opening `static\index.html` directly won't work. Always use the start script.
+> Opening `static\index.html` directly won't work. Always use the start file.
 
 ## Make a room
 
@@ -29,44 +30,67 @@ running yet, the studio starts it for you.
    or Sky only, and whether it's a **Cartoon** or a **Photo**. The studio guesses
    cartoon or photo for you; just check it. This picks the right words for the
    painter, which matters most when Claude isn't set up.
-3. Pick a style, if the choice is shown:
+3. Pick a style:
    - **Continue the scene**: one picture runs all the way around the room.
-   - **Distinct views**: each side wall is its own view of the same world.
-4. Press **Make my walls**. Claude looks at your picture and writes the scene, then
-   the painter paints each wall. The walls light up on the 3D room as they finish.
-   It usually takes **4–6 minutes**. The painter is shared, so sometimes you'll
-   wait in line first; it starts by itself.
+   - **Distinct views**: each side wall is its own view of the same world, joined
+     to the centre by the corners.
+4. Press **Make my walls**. The painter paints each wall, and the walls light up in
+   the room as they finish. It usually takes **4–6 minutes**. The painter is shared
+   with other work, so sometimes you'll wait in line first ("Waiting for the painter
+   (another job is running)"). It starts by itself.
+
+While a room is painting you can open any of your other rooms. A "Painting: …"
+label at the top shows what's running; click it to go back. You'll get a message
+when it's done.
+
+## Three ways to look at your room
+
+- **3D room**: the room you're building. Drag to turn it.
+- **Flat view**: the walls laid out exactly as they sit on the LEDs, top-aligned,
+  with the centre taller than the side walls.
+- **Real theatre**: your pictures on the actual theatre model, seen from where the
+  audience sits. Drag to look around, scroll to move, **Reset view** to go back.
+  Click a screen to see it big.
 
 ## Your result
 
-- **Drag** the room to turn it. **Flat view** shows the walls laid out exactly as
-  they sit on the LEDs.
-- **Real theatre** shows your pictures on the actual theatre model, seen from
-  where the audience sits. Drag to look around, scroll to move, and press
-  **Reset view** to go back. It needs an internet connection the first time.
 - **Hover over any wall** and choose:
-  - **Try another version** to repaint just that wall or corner. A corner is painted
-    together with its wall in "Continue the scene", so they change together.
+  - **Try another version** to repaint just that wall or corner. In "Continue the
+    scene" a corner is painted together with its wall, so they change together.
   - **View big** to see it full size. The ← and → keys step through the room.
-- **Approve & make 4K** makes sharp 4K copies of the pieces you've approved.
+- **Approve & make 4K** makes sharp 4K copies (double size) of the pieces you see.
+  It takes about a minute once the painter is free. Repainting a wall afterwards
+  removes the old 4K files, so approve again when you're happy.
 - **Download** gives you a zip:
-  - `2K/` has `left_1760x800.png`, `LR_160x800.png`, `centre_1920x960.png`,
+  - `2K/`: `left_1760x800.png`, `LR_160x800.png`, `centre_1920x960.png`,
     `RR_160x800.png` and `right_1760x800.png`.
-  - `4K/` (after approving) has the same pieces at double size, for example
-    `left_3520x1600.png`.
-  - `room_layout.jpg` is a picture of the whole room.
+  - `4K/` (after approving): the same pieces at double size, for example
+    `left_3520x1600.png` and `centre_3840x1920.png`.
+  - `room_layout.jpg`: a picture of the whole room.
 
-Your past rooms are along the bottom of the page. Each one is saved in
-`D:\ComfyUI\triwall-studio\projects\<name>\` with its pictures and a `settings.json`.
+## Where your rooms are saved
+
+Your rooms are along the bottom of the page. Each one is a folder in
+`D:\ComfyUI\triwall-studio\projects\<name>\`:
+
+- `centre_original.png` is your picture, unchanged;
+- `2K\` and `4K\` hold the pieces;
+- `room_layout.jpg` is the whole room;
+- `settings.json` has the words and seeds used.
 
 ## Claude writing the scene (optional)
 
-Claude needs an Anthropic API key. Set an environment variable called
-`ANTHROPIC_API_KEY` on this computer (Windows: Start → "Edit environment variables
-for your account" → New), then close and restart the studio.
+With an Anthropic API key, Claude looks at your picture and writes the words for the
+painter. To set it up:
 
-Without a key the studio still works. It uses ready-made template words, which you
-can edit.
+1. Press Start, type **environment variables**, and open "Edit environment
+   variables for your account".
+2. Under "User variables" press **New**. Name: `ANTHROPIC_API_KEY`. Value: your key.
+3. Press OK, then close the Tri-Wall Studio window and start it again.
+
+The top of the page then says "Claude writes the scene". The key stays on this
+computer and is never saved by the studio. Without a key the studio still works,
+using ready-made words for the kind of picture you chose.
 
 ## Advanced
 
@@ -77,8 +101,11 @@ It confuses the painter and spoils the wall.
 
 ## If something goes wrong
 
-- **"Start Tri-Wall Studio first"**: run `start_triwall_studio.bat`.
+- **"Start Tri-Wall Studio first"**: double-click `start_triwall_studio.bat`.
 - **It says "needs uv"**: install uv from https://docs.astral.sh/uv/ and start again.
 - **A wall looks wrong**: press **Try another version** on that wall. Every try is
   different.
+- **Streets that run off into the distance, or made-up writing on signs**: these come
+  from the picture's own perspective. Try another version, check that "Street & town"
+  is picked, or set up Claude.
 - Logs are in `D:\ComfyUI\triwall-studio\logs\`.

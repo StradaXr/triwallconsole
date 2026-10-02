@@ -115,22 +115,30 @@ def _scene_text(scene: str, m: dict) -> dict:
             right_scene="Scene: the same sky continues to the right, with a few more of the same clouds and the same light.",
             ret="A narrow continuous strip of the same sky joining both sides seamlessly.",
             clean=f"A clean {n} of the same sky.")
-    # street & town (default)
+    # street & town (default). The centre is often a street seen down its length, so its edge strips show shopfronts
+    # at a steep angle and the walls tend to carry that perspective on. Tested on the user's town street: describing a
+    # long "row of shops" still receded to a vanishing point, and any mention of signs brought back made-up lettering.
+    # So: a few large shopfronts close up and face-on, filling the frame, and signs are never named at all.
     return dict(
         lead=(f"One continuous wide {n} that carries straight on from the street beside it, {_SAME}{m['style']}: the "
-              "same town, the same sky, the same light, the same sidewalk and the same kind of shops, houses, "
-              "street lamps, flower boxes and trees in the same colours. Seen straight on with the same camera height "
-              "and horizon: the shopfronts and houses face the viewer in a row along the same sidewalk, which runs "
-              "straight across the frame at exactly the same height as in the picture beside it, with no road or "
-              "street turning off into the distance and no new vanishing point." + _SIGNS),
-        left_scene=("Scene: the town continues to the left along the same sidewalk: a cheerful bakery facing the "
-                    "viewer with a striped awning and a big cupcake picture on its sign, flower boxes full of flowers, "
-                    "a street lamp, a wooden bench and round green trees, under the same sky."),
-        right_scene=("Scene: the town continues to the right along the same sidewalk: a little toy shop facing the "
-                     "viewer with a round window and a striped awning and a teddy-bear picture on its sign, planters "
-                     "of colourful flowers, a street lamp and round green trees, under the same sky."),
-        ret="A narrow continuous strip of the same street, sidewalk, buildings and sky joining both sides seamlessly.",
-        clean=f"A clean {n} of a town street with shops facing the viewer.")
+              "same town, the same sky, the same light and the same kind of shops, flower boxes and trees in the same "
+              "colours. Two or three large shopfronts stand close to the viewer, side by side and seen flat from "
+              "directly in front like a theatre backdrop, filling the frame from the pavement to the top: every "
+              "door, window and awning faces the viewer squarely, rooflines and awnings are level and horizontal, "
+              "and the pavement is a level band straight across the bottom of the frame at exactly the same height "
+              "as in the picture beside it. Above each shop window is a plain smooth coloured panel. Seen straight on "
+              "with the same camera height and horizon, with nothing leading off into the distance."),
+        left_scene=("Scene: close up and face-on to the left: a big cheerful bakery front with a striped awning, a "
+                    "window full of cakes and cupcakes, flower boxes full of flowers and a wooden bench on the "
+                    "pavement in front, and a round green tree beside it."),
+        right_scene=("Scene: close up and face-on to the right: a big toy shop front with a round window full of "
+                     "teddy bears and toys, a striped awning, planters of colourful flowers on the pavement in front, "
+                     "and a round green tree beside it."),
+        ret="A narrow continuous strip of the same shopfronts, pavement and sky joining both sides seamlessly.",
+        clean=f"A clean {n} of large shopfronts seen face-on.",
+        # Geometry and lettering words only - none of these is a thing that can be visible in an edge strip.
+        neg_extra="vanishing point, converging lines, one-point perspective, receding, diagonal perspective, "
+                  "lettering, alphabet, numbers")
 
 
 def template(style: str = "continue", scene: str = DEFAULT_SCENE, medium: str = "cartoon") -> dict:
@@ -147,7 +155,8 @@ def template(style: str = "continue", scene: str = DEFAULT_SCENE, medium: str = 
                             f"there, in the same style, light and colours as the centre, " + straight)
     return dict(
         lead=t["lead"], tail=m["tail"], left_scene=t["left_scene"], right_scene=t["right_scene"], ret=t["ret"],
-        neg=m["neg"], clean=t["clean"] + " " + m["clean_end"], ret_neg=RET_NEG,
+        neg=(t["neg_extra"] + ", " if t.get("neg_extra") else "") + m["neg"], clean=t["clean"] + " " + m["clean_end"],
+        ret_neg=RET_NEG,
         summary=f"Template words for a {SCENE_TYPES[scene]['label'].lower()} picture ({medium}). Claude wasn't used.",
         art_style=medium, scene_type=scene,
     )

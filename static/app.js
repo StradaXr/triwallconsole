@@ -251,7 +251,8 @@ function openProject(p) {
   else {
     if (p.has_result) {
       say(p.has4k ? "Your room is finished, in 2K and 4K." : "Here's your room.",
-        (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") + "Hover over any wall to try another version or see it big." + (p.prompt_note ? "\n" + p.prompt_note : ""));
+        (p.summary && p.prompt_source === "claude" ? p.summary + "\n" : "") + "Hover over any wall to try another version or see it big." +
+          (p.prompt_note && p.prompt_source === "claude" ? "\n" + p.prompt_note : ""));
     } else {
       say("Looking good. Ready when you are.", trimmed
         ? "The bright frame is what the LED centre wall shows (2:1). The faded parts are trimmed off."

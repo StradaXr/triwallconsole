@@ -15,7 +15,7 @@ const MESH_TO_PIECE = [
 ];
 const MODEL_URL = "/static/models/TheaterMesh.fbx";
 
-let renderer, scene, camera, controls, host, raf = 0, visible = false, home = null, roomBox = null;
+let renderer, scene, camera, controls, host, raf = 0, home = null, roomBox = null, touched = false;
 const screens = {};          // piece -> mesh
 const loader = new THREE.TextureLoader();
 const current = {};          // piece -> url shown
@@ -92,7 +92,7 @@ export async function init(container, onPick) {
   const target = c.getCenter(new THREE.Vector3());
   const front = roomBox.max.z;              // the open end of the U (the audience side)
   // Stand on the centre line at eye height, at the open (audience) end of the U, looking at the centre screen.
-  home = { pos: new THREE.Vector3(target.x, floorY + 1.6, front + 1.2), target: target.clone() };
+  home = { target: target.clone(), front, floorY };
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -100,9 +100,10 @@ export async function init(container, onPick) {
   controls.enablePan = true;
   controls.screenSpacePanning = true;
   controls.minDistance = 0.8;
-  controls.maxDistance = Math.max(size.x, size.z) * 1.15;
+  controls.maxDistance = Math.max(size.x, size.z) * 2.2;
   controls.maxPolarAngle = Math.PI * 0.62;
   controls.addEventListener("change", keepInside);
+  controls.addEventListener("start", () => { touched = true; });
   reset();
   // A click (not a drag) on a screen opens that piece big.
   const ray = new THREE.Raycaster(), down = { x: 0, y: 0 };
@@ -125,12 +126,23 @@ function keepInside() {
   const p = camera.position, m = 0.15;
   p.x = Math.min(roomBox.max.x - m, Math.max(roomBox.min.x + m, p.x));
   p.y = Math.min(roomBox.max.y + 1.5, Math.max(roomBox.min.y - 0.2, p.y));
-  p.z = Math.min(roomBox.max.z + 3, Math.max(roomBox.min.z + 0.4, p.z));
+  p.z = Math.min(roomBox.max.z + 9, Math.max(roomBox.min.z + 0.4, p.z));
+}
+
+// Stand on the centre line, level with the middle of the screens, just far enough back from the open end of the U
+// that the whole room (the near ends of both side walls, top to bottom) is in frame for this window's shape.
+function homePosition() {
+  const halfW = Math.max(-roomBox.min.x, roomBox.max.x) * 1.04;
+  const halfH = (roomBox.max.y - roomBox.min.y) / 2 * 1.08;
+  const tv = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), th = tv * camera.aspect;
+  const back = Math.max(halfW / th, halfH / tv, 0.6);
+  return new THREE.Vector3(home.target.x, home.target.y, home.front + back);
 }
 
 export function reset() {
   if (!home) return;
-  camera.position.copy(home.pos);
+  touched = false;
+  camera.position.copy(homePosition());
   controls.target.copy(home.target);
   controls.update();
 }
@@ -142,6 +154,7 @@ function resize() {
   renderer.domElement.style.width = "100%"; renderer.domElement.style.height = "100%";
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  if (home && !touched) reset();
 }
 
 function loop() {
@@ -149,8 +162,8 @@ function loop() {
   controls.update();
   renderer.render(scene, camera);
 }
-export function start() { visible = true; resize(); if (!raf) loop(); }
-export function stop() { visible = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
+export function start() { resize(); if (!raf) loop(); }
+export function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
 
 /* pieces: { left: url|null, LR: url|null, centre: url|null, RR: url|null, right: url|null } */
 export function show(pieces) {
