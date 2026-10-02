@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {"name": "triwall-studio", "runtimeExecutable": "uv", "runtimeArgs": ["run", "server.py"], "port": 8790}
+  ]
+}
