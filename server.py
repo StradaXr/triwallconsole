@@ -199,7 +199,56 @@ def seed_key(s: dict, piece: str) -> str:
     return piece
 
 
-def paint(s: dict, swap: dict | None = None, label: str = "") -> str:
+# Every ComfyUI job is recorded in its project (settings["pending"]) the moment it is queued, so restarting the
+# studio (closing the window, a crash) never loses a painting: on start-up the job is picked up again.
+def tracked_run(s: dict, api: dict, kind: str, extra: dict, prompt_id: str | None = None) -> dict:
+    d = PROJECTS / s["name"]
+    (d / "pending_api.json").write_text(json.dumps(api), encoding="utf-8")
+    live = d / "live"
+    live.mkdir(exist_ok=True)
+
+    def on_queued(pid):
+        cur = load(s["name"])
+        cur["pending"] = {"prompt_id": pid, "kind": kind, "extra": extra,
+                          "queued": datetime.now().isoformat(timespec="seconds")}
+        save(cur)
+
+    def on_image(prefix, data):
+        piece = prefix.replace("triwall_2k_", "")
+        if piece in PIECES:
+            (live / f"{piece}.png").write_bytes(data)
+            JOB.setdefault("live", {})[piece] = f"/projects/{s['name']}/live/{piece}.png?t={int(time.time() * 1000)}"
+
+    try:
+        outs = comfy.run(api, report, cancelled, on_image=on_image, on_queued=on_queued, prompt_id=prompt_id)
+    except comfy.Cancelled:
+        _clear_pending(s["name"])
+        raise
+    except RuntimeError as e:
+        if "lost this job" in str(e) or "hit a problem" in str(e):
+            _clear_pending(s["name"])
+        raise
+    report(stage="Saving", detail="", fraction=0.99)
+    return outs
+
+
+def _clear_pending(name: str):
+    cur = load(name)
+    cur.pop("pending", None)
+    save(cur)
+
+
+def save_2k(s: dict, outs: dict):
+    d = PROJECTS / s["name"]
+    (d / "2K").mkdir(exist_ok=True)
+    missing = [p for p in PIECES if not outs.get(f"triwall_2k_{p}")]
+    if missing:
+        raise RuntimeError("The painter finished but these pieces didn't come back: " + ", ".join(missing))
+    for piece in PIECES:
+        (d / "2K" / f"{piece}.png").write_bytes(outs[f"triwall_2k_{piece}"][-1])
+
+
+def paint(s: dict, kind: str, extra: dict, swap: dict | None = None) -> dict:
     d = PROJECTS / s["name"]
     report(stage="Starting the painter", detail="")
     comfy.ensure_running()
@@ -211,32 +260,66 @@ def paint(s: dict, swap: dict | None = None, label: str = "") -> str:
     report(stage="Preparing the painting recipe")
     workflow, preset = build_preset(s, comfy_centre)
     api = comfy.build_api(workflow, preset)
-    if swap:
-        if comfy.swap_seeds(api, swap) == 0:
-            raise RuntimeError("Couldn't find the seed to change in the painting recipe.")
-    live = d / "live"
-    live.mkdir(exist_ok=True)
+    if swap and comfy.swap_seeds(api, swap) == 0:
+        raise RuntimeError("Couldn't find the seed to change in the painting recipe.")
+    return tracked_run(s, api, kind, extra)
 
-    def on_image(prefix, data):
-        piece = prefix.replace("triwall_2k_", "")
-        if piece in PIECES:
-            stamp = int(time.time() * 1000)
-            (live / f"{piece}.png").write_bytes(data)
-            JOB.setdefault("live", {})[piece] = f"/projects/{s['name']}/live/{piece}.png?t={stamp}"
 
-    outs = comfy.run(api, report, cancelled, on_image=on_image)
-    report(stage="Saving", detail="", fraction=0.99)
-    (d / "2K").mkdir(exist_ok=True)
-    got = []
-    for piece in PIECES:
-        imgs = outs.get(f"triwall_2k_{piece}")
-        if imgs:
-            (d / "2K" / f"{piece}.png").write_bytes(imgs[-1])
-            got.append(piece)
-    missing = [p for p in PIECES if p not in got]
-    if missing:
-        raise RuntimeError("The painter finished but these pieces didn't come back: " + ", ".join(missing))
-    return got
+def finish_make(name: str, outs: dict, extra: dict) -> str:
+    s = load(name)
+    save_2k(s, outs)
+    s["versions"] = {p: s.get("versions", {}).get(p, 0) + 1 for p in PIECES}
+    s["painted"] = datetime.now().isoformat(timespec="seconds")
+    s["has4k"] = False
+    s.pop("pending", None)
+    save(s)
+    _clear_4k(s)
+    compose_layout(s)
+    return "Your walls are ready."
+
+
+def finish_reroll(name: str, outs: dict, extra: dict) -> str:
+    s = load(name)
+    piece, key, old, new = extra["piece"], extra["key"], extra["old"], extra["new"]
+    save_2k(s, outs)
+    s["seeds"][key] = new
+    s.setdefault("seed_history", []).append({"piece": key, "old": old, "new": new})
+    # Only pieces that depend on this seed get a new version number.
+    changed = {key} | ({"LR"} if key == "left" else {"RR"} if key == "right" else set())
+    s["versions"] = {p: s.get("versions", {}).get(p, 0) + (1 if p in changed else 0) for p in PIECES}
+    s["has4k"] = False
+    s.pop("pending", None)
+    save(s)
+    _clear_4k(s)
+    compose_layout(s)
+    nice = {"left": "left wall", "right": "right wall", "LR": "left corner", "RR": "right corner"}
+    if key != piece:
+        tail = f" Corners are painted together with their wall, so the {nice[key]} changed too."
+    elif len(changed) > 1:
+        tail = " Its corner was repainted to match."
+    else:
+        tail = ""
+    return f"New version of the {nice[piece]} is ready.{tail}"
+
+
+def finish_4k(name: str, outs: dict, extra: dict) -> str:
+    s = load(name)
+    d = PROJECTS / s["name"]
+    (d / "4K").mkdir(exist_ok=True)
+    for piece in extra["pieces"]:
+        imgs = outs.get(f"triwall_studio_4k_{piece}")
+        if not imgs:
+            raise RuntimeError(f"The 4K {piece} didn't come back.")
+        (d / "4K" / f"{piece}.png").write_bytes(imgs[-1])
+    s["has4k"] = True
+    s["approved"] = {"at": datetime.now().isoformat(timespec="seconds"), "seeds": s["seeds"], "versions": s["versions"]}
+    s.pop("pending", None)
+    save(s)
+    compose_layout(s, "4K")
+    return "4K files are ready to download."
+
+
+FINISH = {"make": finish_make, "reroll": finish_reroll, "4k": finish_4k}
 
 
 def job_make(name: str, style: str, use_prompts: dict | None):
@@ -258,15 +341,8 @@ def job_make(name: str, style: str, use_prompts: dict | None):
         pr, src, note = P.write(c, left, right, style)
         s["prompts"], s["prompt_source"], s["prompt_note"] = pr, src, note
     s.setdefault("seeds", dict(DEFAULT_SEEDS))
-    s["has4k"] = False
     save(s)
-    paint(s)
-    s["versions"] = {p: s.get("versions", {}).get(p, 0) + 1 for p in PIECES}
-    s["painted"] = datetime.now().isoformat(timespec="seconds")
-    save(s)
-    _clear_4k(s)
-    compose_layout(s)
-    return "Your walls are ready."
+    return finish_make(name, paint(s, "make", {}), {})
 
 
 def job_reroll(name: str, piece: str):
@@ -277,29 +353,8 @@ def job_reroll(name: str, piece: str):
     new = old
     while new in taken:
         new = random.randint(1000, 2**31 - 1)
-    got = paint(s, swap={old: new})
-    s = load(name)
-    s["seeds"][key] = new
-    s.setdefault("seed_history", []).append({"piece": key, "old": old, "new": new})
-    # Only pieces that actually depend on this seed get a new version number.
-    changed = {key}
-    if key == "left":
-        changed.add("LR")
-    if key == "right":
-        changed.add("RR")
-    s["versions"] = {p: s.get("versions", {}).get(p, 0) + (1 if p in changed else 0) for p in PIECES}
-    s["has4k"] = False
-    save(s)
-    _clear_4k(s)
-    compose_layout(s)
-    nice = {"left": "left wall", "right": "right wall", "LR": "left corner", "RR": "right corner"}
-    if key != piece:
-        extra = f" Corners are painted together with their wall, so the {nice[key]} changed too."
-    elif len(changed) > 1:
-        extra = f" Its corner was repainted to match."
-    else:
-        extra = ""
-    return f"New version of the {nice[piece]} is ready.{extra}"
+    extra = {"piece": piece, "key": key, "old": old, "new": new}
+    return finish_reroll(name, paint(s, "reroll", extra, swap={old: new}), extra)
 
 
 def _clear_4k(s: dict):
@@ -307,6 +362,9 @@ def _clear_4k(s: dict):
     if d.exists():
         for f in d.glob("*.png"):
             f.unlink()
+    f = PROJECTS / s["name"] / "room_layout_4k.jpg"
+    if f.exists():
+        f.unlink()
 
 
 def job_4k(name: str):
@@ -315,34 +373,58 @@ def job_4k(name: str):
     report(stage="Starting the painter")
     comfy.ensure_running()
     (d / "4K").mkdir(exist_ok=True)
-    items, local = [], {}
-    ow, oh = s["original_size"]
+    items, local = [], set()
     cx0, cy0, cx1, cy1 = s["crop"]
     if cx1 - cx0 >= 3840 and cy1 - cy0 >= 1920:
         # The original is already big enough: take the 4K centre straight from it.
         Image.open(d / s["original"]).convert("RGB").crop(tuple(s["crop"])).resize((3840, 1920), Image.LANCZOS).save(d / "4K" / "centre.png")
-        local["centre"] = True
+        local.add("centre")
     report(stage="Sending the approved pictures")
     for piece, (w, h, _) in PIECES.items():
         if piece in local:
             continue
         name_in = comfy.upload_image(d / "2K" / f"{piece}.png", f"tws_{s['name']}_{piece}_2k_v{s['versions'].get(piece, 0)}.png")
         items.append((piece, name_in, 2 * w, 2 * h))
-    outs = comfy.run(comfy.upscale_graph(items), report, cancelled)
-    for piece, *_ in items:
-        imgs = outs.get(f"triwall_studio_4k_{piece}")
-        if not imgs:
-            raise RuntimeError(f"The 4K {piece} didn't come back.")
-        (d / "4K" / f"{piece}.png").write_bytes(imgs[-1])
-    s["has4k"] = True
-    s["approved"] = {"at": datetime.now().isoformat(timespec="seconds"), "seeds": s["seeds"], "versions": s["versions"]}
-    save(s)
-    compose_layout(s, "4K")
-    return "4K files are ready to download."
+    extra = {"pieces": [i[0] for i in items]}
+    return finish_4k(name, tracked_run(s, comfy.upscale_graph(items), "4k", extra), extra)
+
+
+def job_resume(name: str):
+    """Pick up a job that was queued before the studio was restarted."""
+    s = load(name)
+    pend = s["pending"]
+    report(stage="Picking up where we left off")
+    comfy.ensure_running()
+    api = json.loads((PROJECTS / name / "pending_api.json").read_text(encoding="utf-8"))
+    outs = tracked_run(s, api, pend["kind"], pend["extra"], prompt_id=pend["prompt_id"])
+    return FINISH[pend["kind"]](name, outs, pend["extra"])
+
+
+def resume_pending():
+    """On start-up, the most recent project with a recorded, unfinished job is picked up again."""
+    for d in sorted(PROJECTS.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        f = d / "settings.json"
+        if not f.exists():
+            continue
+        try:
+            s = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if s.get("pending") and (d / "pending_api.json").exists():
+            try:
+                start_job(s["name"], s["pending"]["kind"], job_resume, s["name"])
+            except HTTPException:
+                pass
+            return
 
 
 # ----------------------------------------------------------------------------- web app
 app = FastAPI(title="Tri-Wall Studio")
+
+
+@app.on_event("startup")
+def _startup():
+    threading.Thread(target=resume_pending, daemon=True).start()
 
 
 @app.get("/")

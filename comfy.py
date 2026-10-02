@@ -134,11 +134,14 @@ def stage_for(node: dict) -> str | None:
 HEAVY = ("KSampler", "SamplerCustomAdvanced", "ImageUpscaleWithModel")
 
 
-def run(api: dict, report, cancel_flag=None, timeout=3 * 3600, on_image=None) -> dict:
+def run(api: dict, report, cancel_flag=None, timeout=3 * 3600, on_image=None, on_queued=None,
+        prompt_id: str | None = None) -> dict:
     """Queue `api`, report progress, return {filename_prefix: [image bytes, ...]}.
 
     report(stage=str, detail=str, fraction=float|None, queue_ahead=int|None)
     on_image(prefix, bytes): called as soon as each SaveImage finishes (for a live reveal).
+    on_queued(prompt_id): called once the job is in ComfyUI's queue (so it can be picked up after a restart).
+    prompt_id: resume tracking a job that is already queued instead of queueing a new one.
     """
     ensure_running()
     client_id = str(uuid.uuid4())
@@ -154,10 +157,13 @@ def run(api: dict, report, cancel_flag=None, timeout=3 * 3600, on_image=None) ->
         except Exception:
             ws = None
 
-    r = requests.post(COMFY_URL + "/prompt", json={"prompt": api, "client_id": client_id}, timeout=60)
-    if r.status_code != 200:
-        raise RuntimeError("The painting engine rejected the recipe: " + r.text[:1500])
-    prompt_id = r.json()["prompt_id"]
+    if prompt_id is None:
+        r = requests.post(COMFY_URL + "/prompt", json={"prompt": api, "client_id": client_id}, timeout=60)
+        if r.status_code != 200:
+            raise RuntimeError("The painting engine rejected the recipe: " + r.text[:1500])
+        prompt_id = r.json()["prompt_id"]
+    if on_queued:
+        on_queued(prompt_id)
 
     def overall():
         if not heavy_ids:
@@ -226,10 +232,16 @@ def run(api: dict, report, cancel_flag=None, timeout=3 * 3600, on_image=None) ->
                         raise RuntimeError("The painter hit a problem: " + (detail or json.dumps(st)[:800]))
                     if st.get("status_str") == "success" or st.get("completed") or (not st and entry.get("outputs")):
                         return _collect(api, entry)
-                if not started:
-                    q = requests.get(COMFY_URL + "/queue", timeout=30).json()
+                q = requests.get(COMFY_URL + "/queue", timeout=30).json() if not started or ws is None else None
+                if q is not None:
                     running = [x[1] for x in q.get("queue_running", [])]
                     pending = sorted(q.get("queue_pending", []), key=lambda x: x[0])
+                    if prompt_id not in running and prompt_id not in [x[1] for x in pending]:
+                        h2 = requests.get(COMFY_URL + f"/history/{prompt_id}", timeout=30).json()
+                        if prompt_id not in h2:
+                            raise RuntimeError("The painter lost this job (was it restarted?). Please try again.")
+                        continue
+                if not started:
                     if prompt_id in running:
                         started = True
                         report(stage="Starting", detail="", queue_ahead=0)
