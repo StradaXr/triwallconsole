@@ -256,13 +256,17 @@ def _clear_pending(name: str):
     save(cur)
 
 
-def save_2k(s: dict, outs: dict):
+def save_2k(s: dict, outs: dict, only: set | None = None):
+    """Save the painted pieces. only: just these (a reroll), leaving every other file exactly as it was. ComfyUI
+    is not bit-for-bit repeatable when it has to re-run a node on a shared GPU, so an unchanged seed can still give a
+    slightly different picture: a reroll must never overwrite a piece it was not asked to change."""
     d = PROJECTS / s["name"]
     (d / "2K").mkdir(exist_ok=True)
-    missing = [p for p in PIECES if not outs.get(f"triwall_2k_{p}")]
+    want = [p for p in PIECES if only is None or p in only]
+    missing = [p for p in want if not outs.get(f"triwall_2k_{p}")]
     if missing:
         raise RuntimeError("The painter finished but these pieces didn't come back: " + ", ".join(missing))
-    for piece in PIECES:
+    for piece in want:
         (d / "2K" / f"{piece}.png").write_bytes(outs[f"triwall_2k_{piece}"][-1])
 
 
@@ -284,8 +288,6 @@ def paint(s: dict, kind: str, extra: dict, swap: dict | None = None) -> dict:
         report(stage="Preparing the painting recipe")
         workflow, preset = build_preset(s, comfy_centre)
         api = comfy.build_api(workflow, preset)
-        if kind == "reroll":
-            extra["rebuilt"] = True
     if swap and comfy.swap_seeds(api, swap) == 0:
         raise RuntimeError("Couldn't find the seed to change in the painting recipe.")
     return tracked_run(s, api, kind, extra)
@@ -315,12 +317,12 @@ def finish_make(name: str, outs: dict, extra: dict) -> str:
 def finish_reroll(name: str, outs: dict, extra: dict) -> str:
     s = load(name)
     piece, key, old, new = extra["piece"], extra["key"], extra["old"], extra["new"]
-    save_2k(s, outs)
+    # Only the pieces that depend on this seed: the wall and the corner next to it (or just that corner).
+    changed = {key} | ({"LR"} if key == "left" else {"RR"} if key == "right" else set())
+    save_2k(s, outs, only=changed)
     keep_recipe(name)
     s["seeds"][key] = new
     s.setdefault("seed_history", []).append({"piece": key, "old": old, "new": new})
-    # Only pieces that depend on this seed get a new version number.
-    changed = {key} | ({"LR"} if key == "left" else {"RR"} if key == "right" else set())
     s["versions"] = {p: s.get("versions", {}).get(p, 0) + (1 if p in changed else 0) for p in PIECES}
     s["has4k"] = False
     s.pop("pending", None)
@@ -328,10 +330,7 @@ def finish_reroll(name: str, outs: dict, extra: dict) -> str:
     _clear_4k(s)
     compose_layout(s)
     nice = {"left": "left wall", "right": "right wall", "LR": "left corner", "RR": "right corner"}
-    if extra.get("rebuilt"):
-        tail = (" This room was made with an older version of the painter, so the other wall may look a little "
-                "different too. From now on only the piece you choose will change.")
-    elif key != piece:
+    if key != piece:
         tail = f" Corners are painted together with their wall, so the {nice[key]} changed too."
     elif len(changed) > 1:
         tail = " Its corner was repainted to match."
