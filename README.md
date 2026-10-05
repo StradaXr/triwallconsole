@@ -31,6 +31,17 @@ you must set it for any second instance.** A different port is not a different
 tool: both write the same `state.json`, and a test instance once wiped a live
 scene because of exactly that.
 
+### Tri-Wall Studio (`studio/`)
+
+A second app for people who don't know ComfyUI: drop in a centre picture and it
+paints the left and right walls and both returns through ComfyUI. It is its own
+Python server (`studio/server.py`, port 8790) with its own `studio/projects/`
+folder and no `state.json`, so it never touches the console's scene. The
+**Tri-Wall Studio →** button in the masthead goes to `/studio`, which opens it
+and starts it first if needed (`TRIWALL_STUDIO_URL` changes where it looks);
+the studio's **Tri-Wall Console →** button comes back. The studio never starts
+a console. See `studio/README.md`.
+
 ### Which build am I looking at?
 
 The masthead shows `build <id> · port <n>` and the folder it was served from.

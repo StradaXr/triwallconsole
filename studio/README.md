@@ -9,7 +9,14 @@ quietly in the background and you never have to open it.
 
 ## Start it
 
-1. Open the folder `D:\ComfyUI\triwall-studio`.
+The studio lives in the `studio` folder of the Tri-Wall Console. The easiest way in is
+the orange **Tri-Wall Studio →** button at the top of the Console: it opens the studio,
+and starts it first if it isn't running. **Tri-Wall Console →** at the top of the studio
+takes you back.
+
+To start it on its own:
+
+1. Open the `studio` folder inside the triwallconsole folder.
 2. Double-click **`start_triwall_studio.bat`**.
 3. Your browser opens **http://127.0.0.1:8790** by itself. Keep the black window
    open while you work, and close it when you're finished.
@@ -71,12 +78,16 @@ when it's done.
 ## Where your rooms are saved
 
 Your rooms are along the bottom of the page. Each one is a folder in
-`D:\ComfyUI\triwall-studio\projects\<name>\`:
+`studio\projects\<name>\` (never committed to git):
 
 - `centre_original.png` is your picture, unchanged;
 - `2K\` and `4K\` hold the pieces;
 - `room_layout.jpg` is the whole room;
 - `settings.json` has the words and seeds used.
+
+Settings for whoever runs it (all optional): `TRIWALL_STUDIO_PORT` (default 8790),
+`TRIWALL_STUDIO_PROJECTS` (another rooms folder), `TRIWALL_CONSOLE_URL` (where the
+Console button goes, default http://localhost:8934).
 
 ## Claude writing the scene (optional)
 

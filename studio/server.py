@@ -29,7 +29,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 
@@ -37,9 +37,12 @@ import comfy
 import prompts as P
 
 HERE = Path(__file__).parent
-PROJECTS = HERE / "projects"
+PROJECTS = Path(os.environ.get("TRIWALL_STUDIO_PROJECTS", HERE / "projects"))
 STATIC = HERE / "static"
 PORT = int(os.environ.get("TRIWALL_STUDIO_PORT", "8790"))
+# The Tri-Wall Console this studio sits next to (the repo one level up). Only linked to, never started from
+# here: a second console on the same state.json would fight the running one (see the console's CLAUDE.md).
+CONSOLE_URL = os.environ.get("TRIWALL_CONSOLE_URL", "http://localhost:8934").rstrip("/")
 PROJECTS.mkdir(exist_ok=True)
 
 # Room geometry at 2K (theatre.js, top-aligned on a 5760x1080 canvas): left | LR | centre | RR | right
@@ -623,6 +626,18 @@ def download(name: str):
             z.write(d / "room_layout_4k.jpg", "4K/room_layout_4k.jpg")
     return Response(buf.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{s["name"]}.zip"'})
+
+
+@app.get("/console")
+def console():
+    """The 'Tri-Wall Console' button: go there if it's running, otherwise say how to start it."""
+    try:
+        import requests
+        requests.get(CONSOLE_URL + "/api/build", timeout=2).raise_for_status()
+        return RedirectResponse(CONSOLE_URL + "/", status_code=302)
+    except Exception:
+        page = (STATIC / "console_down.html").read_text(encoding="utf-8").replace("__CONSOLE_URL__", CONSOLE_URL)
+        return HTMLResponse(page, status_code=503)
 
 
 app.mount("/projects", StaticFiles(directory=PROJECTS), name="projects")

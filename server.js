@@ -1331,11 +1331,76 @@ function runProbe(mediaPath, opts = {}){
   });
 }
 
+// ---- Tri-Wall Studio --------------------------------------------------
+// studio/ is a separate app (FastAPI on its own port, drives ComfyUI). The
+// console only links to it, and starts it on first use if it isn't running.
+// It has its own projects folder and no state.json, so starting it here
+// cannot touch this console's scene.
+const STUDIO_URL = (process.env.TRIWALL_STUDIO_URL || 'http://127.0.0.1:8790').replace(/\/+$/, '');
+const STUDIO_DIR = path.join(APP_DIR, 'studio');
+let STUDIO_ERROR = null, STUDIO_STARTED_AT = 0;
+
+function studioUp() {
+  return new Promise(resolve => {
+    const r = http.get(STUDIO_URL + '/api/status', { timeout: 1500 }, res => { res.resume(); resolve(res.statusCode === 200); });
+    r.on('timeout', () => { r.destroy(); resolve(false); });
+    r.on('error', () => resolve(false));
+  });
+}
+
+function startStudio() {
+  if (Date.now() - STUDIO_STARTED_AT < 90000) return;   // one start at a time; first start can take ~a minute
+  STUDIO_STARTED_AT = Date.now(); STUDIO_ERROR = null;
+  if (!fs.existsSync(path.join(STUDIO_DIR, 'server.py'))) { STUDIO_ERROR = 'studio/server.py is missing from this checkout.'; return; }
+  try {
+    const child = spawn('uv', ['run', '--quiet', 'server.py'], {
+      cwd: STUDIO_DIR, detached: true, stdio: 'ignore', windowsHide: true,
+      env: { ...process.env, TRIWALL_CONSOLE_URL: `http://localhost:${PORT}`,
+             TRIWALL_STUDIO_PORT: new URL(STUDIO_URL).port || '8790' },
+    });
+    child.on('error', e => { STUDIO_ERROR = 'Could not start the studio (' + e.message + '). It needs "uv": https://docs.astral.sh/uv/'; STUDIO_STARTED_AT = 0; });
+    child.on('exit', code => { if (code) { STUDIO_ERROR = 'The studio stopped (exit ' + code + '). Run studio/start_triwall_studio.bat to see why.'; STUDIO_STARTED_AT = 0; } });
+    child.unref();
+  } catch (e) { STUDIO_ERROR = String(e.message || e); STUDIO_STARTED_AT = 0; }
+}
+
+const STUDIO_STARTING_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Opening Tri-Wall Studio</title>
+<style>body{margin:0;background:#0b0a10;color:#f3f1fa;font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+main{max-width:520px;margin:16vh auto 0;padding:0 16px}h1{font-size:26px;margin:0 0 10px}p{color:#a7a2bd;margin:0 0 10px}
+a{color:#ffb547}.err{color:#ff6b6b}</style></head><body><main>
+<h1>Opening Tri-Wall Studio…</h1><p id="msg">Starting it up. The first start can take up to a minute.</p>
+<p><a href="/">← Back to the Tri-Wall Console</a></p></main>
+<script>
+let n = 0;
+(async function poll() {
+  try {
+    const s = await (await fetch('/api/studio', { cache: 'no-store' })).json();
+    if (s.up) { location.replace('__STUDIO_URL__/'); return; }
+    if (s.error) { const m = document.getElementById('msg'); m.className = 'err'; m.textContent = s.error; return; }
+  } catch (e) {}
+  if (++n > 120) { document.getElementById('msg').textContent = 'Still not answering. Run studio/start_triwall_studio.bat to see what is wrong.'; return; }
+  setTimeout(poll, 1000);
+})();
+</script></body></html>`;
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const p = url.pathname;
 
   try {
+    // ---- Tri-Wall Studio (studio/, its own Python server) ----
+    if (req.method === 'GET' && p === '/api/studio') {
+      return sendJson(res, 200, { up: await studioUp(), url: STUDIO_URL, error: STUDIO_ERROR });
+    }
+    if (req.method === 'GET' && p === '/studio') {
+      if (await studioUp()) { res.writeHead(302, { Location: STUDIO_URL + '/' }); return res.end(); }
+      startStudio();
+      const html = Buffer.from(STUDIO_STARTING_PAGE.replace(/__STUDIO_URL__/g, STUDIO_URL), 'utf8');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': html.length, 'Cache-Control': 'no-store' });
+      return res.end(html);
+    }
+
     // ---- static ----
     if (req.method === 'GET' && p === '/api/build') {
       return sendJson(res, 200, buildStamp());
