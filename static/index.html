@@ -126,15 +126,6 @@
     <section class="console" aria-live="polite">
       <p id="status" class="status">Drop a picture onto the centre wall to begin.</p>
       <p id="substatus" class="substatus"></p>
-      <div id="pickRow" class="pick" hidden>
-        <span class="picklabel" id="pickLabel">What's in your picture?</span>
-        <div class="seg chips" id="sceneSeg" role="radiogroup" aria-labelledby="pickLabel"></div>
-        <div class="seg small" id="mediumSeg" role="radiogroup" aria-label="Is it a cartoon or a photo?">
-          <button data-medium="cartoon" role="radio" aria-checked="true">Cartoon</button>
-          <button data-medium="photo" role="radio" aria-checked="false">Photo</button>
-        </div>
-        <span class="hint" id="pickHint"></span>
-      </div>
       <div id="styleRow" class="seg" role="radiogroup" aria-label="Style" hidden>
         <button class="on" data-style="continue" role="radio" aria-checked="true"><b>Continue the scene</b><small>one picture all the way round</small></button>
         <button data-style="distinct" role="radio" aria-checked="false"><b>Distinct views</b><small>each wall its own view of the same world</small></button>

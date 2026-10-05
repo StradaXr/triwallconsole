@@ -269,35 +269,10 @@ function newRoom() {
   document.querySelectorAll(".filmcard").forEach((c) => c.classList.remove("current"));
 }
 
-function renderScenes() {
-  const box = $("sceneSeg"), types = (S.status && S.status.scene_types) || {};
-  if (box.childElementCount === Object.keys(types).length) return;
-  box.innerHTML = "";
-  for (const [k, label] of Object.entries(types)) {
-    const b = document.createElement("button");
-    b.dataset.scene = k; b.textContent = label; b.setAttribute("role", "radio");
-    b.onclick = () => setScene(k);
-    box.appendChild(b);
-  }
-  setScene(S.scene);
-}
-function setScene(k) {
-  S.scene = k;
-  document.querySelectorAll("[data-scene]").forEach((b) => { const on = b.dataset.scene === k; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
-  pickHint();
-}
-function setMedium(m) {
-  S.medium = m;
-  document.querySelectorAll("[data-medium]").forEach((b) => { const on = b.dataset.medium === m; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
-  pickHint();
-}
-function pickHint() {
-  const p = S.project; if (!p) return;
-  const guess = p.medium_guess ? `It looks like a ${p.medium_guess} to us. Is that right? ` : "";
-  $("pickHint").textContent = p.has_result
-    ? "These choices are used the next time you paint the whole room."
-    : guess + "This picks the right words for the painter" + (S.status && S.status.claude ? " and tells Claude what it's looking at." : ".");
-}
+// Scene type and cartoon/photo are no longer asked: the server's per-room values
+// (default scene, guessed medium) are passed straight through.
+function setScene(k) { S.scene = k; }
+function setMedium(m) { S.medium = m; }
 
 function setStyle(s) {
   if (s === "distinct" && !(S.status && S.status.distinct)) s = "continue";
@@ -309,7 +284,6 @@ function updateActions() {
   const p = S.project, here = viewingJob(), elsewhere = jobRunning() && !here, done = p && p.has_result;
   $("btnMake").hidden = !!done || here; $("btnMake").disabled = !p || elsewhere;
   $("styleRow").hidden = !(S.status && S.status.distinct) || !!done || here || !p;
-  $("pickRow").hidden = !p || here;
   $("btn4k").hidden = !done || here; $("btn4k").disabled = elsewhere;
   $("btnDownload").hidden = !done || here;
   $("btnAgain").hidden = !done || here; $("btnAgain").disabled = elsewhere;
@@ -530,7 +504,6 @@ async function loadStatus() {
     const e = $("chipEngine");
     e.textContent = s.engine ? "Painter ready" : "Painter starts when needed";
     e.className = "chip " + (s.engine ? "ok" : "");
-    renderScenes();
     updateActions();
     return true;
   } catch (e) { return false; }
